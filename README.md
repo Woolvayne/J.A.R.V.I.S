@@ -1,147 +1,114 @@
-# J.A.R.V.I.S – Just A Rather Very Intelligent System 🍓 Raspberry-Pi-Edition
+# J.A.R.V.I.S – Just A Rather Very Intelligent System 🚀 Vercel-Edition
 
-Ein JARVIS-artiges HUD-Dashboard wie aus den Iron-Man-Filmen – optimiert für den
-**Raspberry Pi 3B+** (1 GB RAM, ARM): Der Pi zeigt Dashboard, Stimme und
-MCP-Brücke, die KI rechnet **kostenlos in der Cloud** (kein Download, nur ein
-gratis API-Key). Dazu **beliebig viele MCP-Server** als Werkzeuge für die KI.
+Ein JARVIS-artiges HUD-Dashboard wie aus den Iron-Man-Filmen – jetzt **komplett
+ohne eigenes Backend**: Vercel hostet die statische Seite, die KI läuft per
+**Groq (gratis)** oder **lokal per Ollama**, und **echte MCP-Server wie
+Composio** (Gmail, Drive, Sheets …) werden direkt aus dem Browser verbunden.
+**100 % kostenlos, keine kostenpflichtigen APIs.**
 
-![Stack](https://img.shields.io/badge/Stack-FastAPI%20%2B%20Vanilla%20JS-00d4ff) ![Kosten](https://img.shields.io/badge/Kosten-0%20%E2%82%AC-2bff88) ![Pi](https://img.shields.io/badge/Raspberry%20Pi-3B%2B-c51a4a) ![Sprache](https://img.shields.io/badge/UI-Deutsch-1a7fff)
+![Stack](https://img.shields.io/badge/Stack-Vercel%20%2B%20Vanilla%20JS-00d4ff) ![Kosten](https://img.shields.io/badge/Kosten-0%20%E2%82%AC-2bff88) ![Backend](https://img.shields.io/badge/Backend-keins%20n%C3%B6tig-1a7fff) ![Sprache](https://img.shields.io/badge/UI-Deutsch-1a7fff)
 
 ## ✨ Features
 
-- **HUD-Dashboard:** System-Gauges (CPU/RAM/Disk + 🌡 Pi-Temperatur live), Wetter, Weltuhr, News (RSS), Krypto-Kurse
-- **Animierter Orb** mit Pi-Sparmodus (halbe FPS, weniger Partikel, kein Blur)
-- **Stimme:** Microsoft **Edge TTS** (kostenlos, kein Key) – Standard `de-DE-ConradNeural` 🇩🇪, Spracheingabe per Web Speech API
-- **Cloud-KI (gratis, ohne Download):** Groq ⭐ → Gemini → Cerebras → Mistral → OpenRouter → Pollinations → Offline-Demo
-- **🔌 MCP-Support in beide Richtungen:**
-  - JARVIS als **MCP-Client**: *jeden* MCP-Server anbinden (`mcp_servers.json`), Tools nutzt die KI automatisch
-  - JARVIS als **MCP-Server**: eigene Tools für Claude Desktop/Cursor (`backend/mcp_server.py`)
-- **20 Plugins** + lokale Offline-Befehle (Wetter, Timer, Rechnen, Suche, Witze …)
+- **Kein Backend, kein Server, keine Wartung** – deployen und läuft
+- **HUD-Dashboard:** Geräte-Infos, Wetter (Open-Meteo), Weltuhr, News (RSS), Krypto (CoinGecko) – alles direkt aus dem Browser
+- **Animierter Orb**, Boot-Sequenz, deutsche **Browser-Stimme** + Spracheingabe (Web Speech API)
+- **KI gratis ohne Download:** Groq ⭐ (eigener Key im Browser oder Vercel-Env) → Ollama lokal → Pollinations (keylos) → Demo
+- **🔌 Echte MCP-Server im Browser:** Composio & beliebige Remote-MCPs (Streamable HTTP) – die KI nutzt ihre Tools automatisch (Gmail lesen, Drive suchen …)
+- **Lokale Mini-Modelle mit MCP:** Ollama (`qwen2.5:0.5b`) auf Pi/PC + dieselben MCP-Tools, komplett offline möglich
+- **20 Plugins** + Offline-Befehle („Wetter in Berlin“, „Timer 5 Minuten“, „Rechne 12*8“ …)
+- Optional weiter dabei: Pi-Backend für stdio-MCP-Server, Edge TTS & echte Pi-Werte
 
-## 🍓 Raspberry Pi 3B+ – Installation
+## 🚀 Auf Vercel deployen (2 Minuten)
 
-**Empfehlung:** Raspberry Pi OS **64-bit** (Lite reicht), Kühlkörper/Gehäuselüfter, gutes 5V/2.5A-Netzteil.
+1. Repo auf GitHub → [vercel.com](https://vercel.com) → **Add New → Project** → dieses Repo importieren.
+2. **Keine Einstellungen ändern** (`vercel.json` regelt alles: `frontend/` als Output, `api/` als Functions) → **Deploy**.
+3. Fertig! Dashboard öffnen, ⚙ Einstellungen:
+   - **Groq-Key** eintragen (kostenlos: console.groq.com, keine Kreditkarte) – bleibt nur in deinem Browser, **oder**
+   - stattdessen Env `GROQ_API_KEY` in Vercel setzen (Project → Settings → Environment Variables), dann gilt der Key serverseitig für alle Besucher deiner Instanz.
 
-```bash
-git clone https://github.com/Woolvayne/J.A.R.V.I.S
-cd J.A.R.V.I.S
-./install-pi.sh
-```
+Optional in Vercel: `MCP_ALLOWED_HOSTS=composio.dev,mein-server.de` (welche MCP-Hosts der Proxy `/api/mcp` anrufen darf).
 
-Das Skript installiert Python, die schlanken Pi-Abhängigkeiten
-(`requirements-pi.txt`), erstellt die `.env` und richtet den
-**Autostart-Dienst** `jarvis` (systemd) ein. Danach im Browser:
-`http://<PI-IP>:8000` (IP zeigt dir das Skript an; Handy/Tablet im selben WLAN geht auch).
+**Lokal testen:** `npx vercel dev` – oder einfach `frontend/index.html` öffnen (dann ohne `/api`-Functions: Groq per Browser-Key, Ollama & Pollinations laufen trotzdem).
 
-```bash
-sudo systemctl status jarvis     # Status
-journalctl -u jarvis -f          # Live-Logs
-sudo systemctl restart jarvis    # z. B. nach .env-Änderung
-```
+## 🔌 Composio & MCP (das Herzstück)
 
-Ohne systemd (z. B. zum Testen): `./start.sh` – erkennt ARM automatisch.
+1. Auf composio.dev einen **MCP-Server** erstellen (Toolkits: Gmail, Google Drive, Sheets …; Accounts per OAuth verbinden).
+2. MCP-URL (`https://backend.composio.dev/v3/mcp/…`) + API-Key kopieren.
+3. In J.A.R.V.I.S: 🔌 **MCP-Plugin → „+ Composio-Vorlage“** → URL & `{"x-api-key":"ak_…"}` eintragen → verbinden.
+4. Fragen wie *„Zeig meine letzten E-Mails“* – die KI ruft die Composio-Tools selbstständig auf.
 
-### Warum läuft die KI (standardmäßig) nicht auf dem Pi?
+Beliebige andere Remote-MCP-Server gehen genauso (URL + Header-JSON).
+**Ausführliche Anleitung: [MCP.md](MCP.md)** – inkl. Ollama-CORS-Setup,
+Sicherheits-Hinweisen und Fehlerbehebung.
 
-Ein 3B+ hat 1 GB RAM – große lokale LLMs sind damit nicht sinnvoll.
-Deshalb standardmäßig: **Intelligenz aus der Gratis-Cloud, der Pi bleibt schlank.**
+> Warum kein stdio-MCP im Browser? Ein Browser kann keine lokalen Programme
+> (`uvx`/`npx`) starten. Wer das braucht, nimmt das optionale Pi-Backend (unten).
 
-**Optional geht lokal doch was:** Mit `./install-ollama-pi.sh` läuft ein
-Mini-Modell (`qwen2.5:0.5b`, ~400 MB) offline auf dem Pi – langsam
-(3–6 Token/s), aber **inklusive MCP-Tool-Calling**. Details & Modell-Tabelle
-in **MCP.md** Abschnitt 4. Empfehlung: Hybrid `LLM_ORDER=ollama,groq,demo`.
+## 🤖 Welche kostenlose KI?
 
-### Pi-Tuning (schon eingebaut)
+| Weg | Key | MCP-Tools | Hinweis |
+|---|---|---|---|
+| **Groq** ⭐ | gratis Key (Browser oder Vercel-Env) | ✅ | Sehr schnell, Llama 3.3 70B, ~1.000 Anfragen/Tag. Empfehlung |
+| **Ollama lokal** | nein | ✅ | Mini-Modell auf Pi/PC (`qwen2.5:0.5b`), offline, langsam. CORS: `OLLAMA_ORIGINS=*` (nur Heimnetz!) |
+| Gemini u. a. | gratis Key (Vercel-Env via `/api/chat`) | ✅ | Provider per API wählbar (groq/gemini/openrouter/cerebras/mistral) |
+| Pollinations | nein | ❌ | Keyloser Fallback direkt aus dem Browser |
+| Demo | nein | ❌ | Offline-Regeln, immer da |
 
-- Nur **1 Uvicorn-Worker**, GZip, TTL-Caches (Wetter/News 10 Min, Krypto 2 Min)
-- Nicht-blockierende CPU-Messung, System-Polling im Pi-Modus alle 7 s
-- Frontend-Sparmodus: Orb ~30 FPS, 8 statt 24 Partikel, kein `backdrop-filter`
-- systemd-Speichergrenzen (`MemoryHigh=450M`) statt OOM-Absturz
-- MCP-Client nur mit Standardbibliothek – kein schweres SDK
-
-## 🤖 Welche kostenlose KI? (Recherche-Stand: November 2026)
-
-| Anbieter | Gratis-Limit (ca.) | Karte? | Tool-Calling (MCP) | Fazit |
-|---|---|---|---|---|
-| **Groq** ⭐ | ~1.000 Anfragen/Tag pro Modell (Llama 3.3 70B), 30/Min | nein | ✅ nativ | **Empfehlung:** extrem schnell – perfekt für Sprache + MCP auf dem Pi. Key: console.groq.com. Modell `llama-3.1-8b-instant` hat noch höhere Limits |
-| **Google Gemini** | ~1.500 Anfragen/Tag (Flash), 1M Kontext | nein | ✅ nativ | Bestes Backup / sehr großzügig. Key: aistudio.google.com ⚠️ Free-Tier-Eingaben dürfen außerhalb EU/UK/CH zur Produktverbesserung genutzt werden |
-| Cerebras | schnelles Kontingent (Dashboard prüfen) | nein* | ✅ | Sehr schnell, Konditionen können wechseln |
-| Mistral | ~1 Mrd. Token/Monat pro Modell (Experiment) | nein (Telefon nötig) | ✅ | EU-Anbieter, 1 Anfrage/s reicht für JARVIS |
-| OpenRouter `:free` | 50/Tag (1.000/Tag nach einmalig $10 Guthaben) | nein | ✅ (modellabhängig) | Viele Modelle, als Primärquelle auf dem Pi zu knapp |
-| Pollinations | keylos, begrenzt | – | ❌ | Notfall-Fallback ohne Key (eingebaut) |
-
-`GROQ_API_KEY` in die `.env` eintragen, Dienst neu starten – fertig.
-Reihenfolge änderbar per `LLM_ORDER=gemini,groq,demo`.
-
-## 🔎 Kiro Free – geht das?
-
-**Zum Entwickeln ja, als Laufzeit-KI nein.** Kiro (AWS Agentic IDE) gibt im
-Free-Tier 50 Credits/Monat – ideal, um dieses Projekt zu *bauen*. Eine
-einbettbare Runtime-API für das Dashboard gibt es nicht; dafür nutzt JARVIS
-die obige Gratis-Kette (Groq & Co.). Stimme: Edge TTS (`rany2/edge-tts`), keylos.
-
-## 🔌 MCP – jeden Connector verbinden
-
-**Bei Groq wird kein MCP „hinzugefügt“** – Groq ist nur das Modell, JARVIS
-ist der MCP-Host: Server in `mcp_servers.json` auf `"enabled": true` setzen →
-im Dashboard 🔌 MCP → „Neu laden“. Die KI (Groq/Gemini oder lokales
-Mini-Modell) nutzt die Tools ab dann automatisch. JARVIS selbst als
-MCP-Server für Claude Desktop: `backend/mcp_server.py`.
-**Ausführlich: [MCP.md](MCP.md)**
-
-## 🎙 Beispiele (Text oder Mikrofon)
+## 🎙 Beispiele
 
 | Sag / schreib | Was passiert |
 |---|---|
-| „Wetter in Hamburg“ | Wetter-Widget wechselt die Stadt |
-| „Timer 5 Minuten“ | Timer-Plugin startet |
-| „Rechne 12*8“ | Lokaler Rechner |
-| „Suche nach schwarzen Löchern“ | DuckDuckGo-Suche (keylos) |
-| „Wie spät ist es in Tokio?“ | MCP-Time-Server (wenn aktiviert) |
-| „Öffne MCP“ / „Öffne Notizen“ | Plugin öffnet sich |
-| Beliebige Frage | Cloud-KI antwortet (Groq/Gemini/…) |
-
-## 🧩 Plugins (20)
-
-Wetter 🌤 · System 🖥 · **MCP 🔌** · Notizen 📝 · Todos ✅ · Rechner 🧮 · Timer ⏱ · Stoppuhr ⏲ ·
-Suche 🔍 · Wikipedia 📚 · News 📰 · Krypto ₿ · GitHub 🐙 · Bild-KI 🎨 · Übersetzer 🌐 ·
-Dateien 📁 · Weltuhr 🕐 · Pomodoro 🍅 · Smart Light 💡 · Media 🎬
-
-Eigenes Plugin bauen → **[PLUGINS.md](PLUGINS.md)** (ein Eintrag in `frontend/js/plugins.js`).
+| „Zeig meine letzten E-Mails“ | Composio-Gmail-Tool (wenn verbunden) |
+| „Wetter in Hamburg“ | Wetter-Widget |
+| „Timer 5 Minuten“ / „Rechne 12*8“ | Lokale Plugins, offline |
+| „Wie spät ist es in Tokio?“ | Weltuhr / MCP-Time-Server |
+| Beliebige Frage | Groq (gratis) oder Ollama lokal |
 
 ## 🏗 Architektur
 
 ```
-Browser (HUD, Vanilla JS, Pi-Sparmodus)
-  app.js · voice.js (Edge TTS) · chat.js · plugins.js (20 Plugins)
-        │  HTTP /api/*
-FastAPI auf dem Pi (backend/server.py, 1 Worker, Caches, GZip)
-  ├─ /api/system   psutil + Pi-Temperatur
-  ├─ /api/chat     LLM-Kette (backend/llm.py) + MCP-Tool-Calling
-  ├─ /api/mcp/*    MCP-Client (backend/mcp_client.py, nur Stdlib)
-  │                  ├─ stdio-Server (uvx/npx lokal auf dem Pi)
-  │                  └─ HTTP-Server (Streamable HTTP, remote)
-  ├─ /api/tts      Edge TTS → MP3 (backend/tts.py)
-  ├─ /api/weather|news|crypto   keylose Gratis-APIs mit Cache
-  └─ backend/mcp_server.py      JARVIS selbst als MCP-Server (stdio)
+Vercel
+├─ frontend/ (statisch) index.html · css · js
+│   ├─ app.js      Geräte-Infos, Wetter/News/Krypto direkt, Orb
+│   ├─ mcp.js      MCP-Client im Browser (initialize/tools/list/tools/call)
+│   ├─ chat.js     Befehle + KI-Loop (Groq/Ollama/Pollinations) inkl. MCP-Tools
+│   ├─ voice.js    Browser-Stimme + Spracheingabe (optional Edge TTS via Pi)
+│   └─ plugins.js  20 Plugins (inkl. MCP-Manager mit Composio-Vorlage)
+└─ api/ (winzige Functions, optional aber empfohlen)
+    ├─ chat.js   LLM-Proxy – versteckt Env-Keys, 1 Aufruf, Loop bleibt im Browser
+    ├─ mcp.js    MCP-Proxy – umgeht CORS, Host-Allowlist (Composio & Co.)
+    ├─ news.js   RSS-Proxy          └─ health.js  Status/Env-Übersicht
+
+Optional (Repo): backend/ FastAPI auf dem Pi (stdio-MCP, Edge TTS, Pi-Werte),
+install-pi.sh, install-ollama-pi.sh, mcp_servers.json
 ```
 
-Sicherheit: Dateimanager nur im Projektordner (403-Schutz), MCP-Server laufen
-mit deinen Rechten – nur Vertrauenswürdiges aktivieren und das Dashboard nicht
-ungeschützt ins Internet hängen (kein Login eingebaut).
+Sicherheit: Keys liegen nur im Browser (localStorage) oder in der Vercel-Env –
+nie im Code. MCP-Proxy hat eine Host-Allowlist. Dashboard ohne Login → bei
+serverseitigen Keys die Vercel-Instanz ggf. per Vercel-Schutz absichern.
+
+## 🍓 Raspberry Pi?
+
+Das Dashboard läuft im Pi-Browser (Sparmodus in den ⚙ Einstellungen) oder auf
+Handy/PC – der Pi wird nur noch gebraucht für: **Ollama-Mini-Modell**
+(`./install-ollama-pi.sh`), **stdio-MCP-Server** oder **Edge TTS**
+(`./install-pi.sh`, Backend-URL dann in den Einstellungen eintragen).
 
 ## 📁 Projektstruktur
 
 ```
-backend/    server.py · llm.py · tts.py · mcp_client.py · mcp_server.py
-frontend/   index.html · css/style.css · js/{app,voice,chat,plugins}.js
-deploy/     jarvis.service (systemd-Vorlage)
-mcp_servers.json  MCP-Serverliste (Beispiele deaktiviert)
-install-pi.sh · install-ollama-pi.sh (lokales Mini-Modell) · start.sh/start.bat · requirements-pi.txt · MCP.md · PLUGINS.md
+frontend/   Das Dashboard (Vercel-Output)
+api/        Vercel-Functions: health · chat · mcp · news
+vercel.json Deployment-Konfiguration
+backend/    Optionales Pi-Backend (FastAPI: stdio-MCP, Edge TTS, Pi-Werte)
+deploy/     systemd-Vorlage · install-pi.sh · install-ollama-pi.sh
+MCP.md      MCP-Anleitung (Composio, Ollama, Sicherheit)
+PLUGINS.md  Eigenes Plugin bauen
 ```
 
-Inspiriert von JARVIS-HUD-Projekten auf GitHub; gebaut mit FastAPI,
-[edge-tts](https://github.com/rany2/edge-tts), Open-Meteo, CoinGecko,
-Pollinations, Groq & Gemini Free Tier – alles Open Source / gratis.
+Inspiriert von JARVIS-HUD-Projekten auf GitHub; gebaut mit Vercel, Groq &
+Gemini Free Tier, Pollinations, Edge TTS (optional), Open-Meteo, CoinGecko,
+Composio-MCP – alles gratis.
 
 *„At your service, Sir.“*

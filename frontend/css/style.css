@@ -105,7 +105,7 @@ a{color:var(--cyan2)}
 .modal-head h3{margin:0;letter-spacing:.1em}
 .modal-body{padding:16px;overflow:auto}
 .field{display:block;margin:12px 0;font-size:.95rem}
-.field select,.field input[type=text]{width:100%;margin-top:6px;background:#04101f;color:#fff;border:1px solid var(--line);border-radius:10px;padding:10px}
+.field select,.field input[type=text],.field input[type=password]{width:100%;margin-top:6px;background:#04101f;color:#fff;border:1px solid var(--line);border-radius:10px;padding:10px}
 .btn{background:linear-gradient(135deg,var(--blue),var(--cyan));color:#02101f;border:none;border-radius:10px;padding:10px 16px;font-weight:700;cursor:pointer}
 .btn.ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}

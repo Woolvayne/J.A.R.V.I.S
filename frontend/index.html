@@ -130,11 +130,33 @@
   <div class="modal-box">
     <div class="modal-head"><h3>Einstellungen</h3><button class="icon-btn" id="settingsClose">✕</button></div>
     <div class="modal-body">
-      <label class="field">Stimme (Edge TTS – kostenlos)
+      <label class="field">Stimme (Browser-Stimme, kostenlos – mit Pi-Backend: Edge TTS)
         <select id="setVoice"></select>
       </label>
       <label class="field"><input type="checkbox" id="setTtsOn" checked> Antworten vorlesen (TTS)</label>
       <label class="field"><input type="checkbox" id="setAutoSpeak" checked> Begrüßung beim Start sprechen</label>
+      <label class="field">Groq API-Key (kostenlos, console.groq.com – bleibt nur in diesem Browser)
+        <input type="password" id="setGroqKey" placeholder="gsk_… (leer = Vercel-Env-Key nutzen)" autocomplete="off">
+      </label>
+      <label class="field">KI-Reihenfolge
+        <select id="setLlmOrder">
+          <option value="groq,ollama,pollinations">Groq → Ollama lokal → Pollinations</option>
+          <option value="ollama,groq,pollinations">Ollama lokal → Groq → Pollinations</option>
+          <option value="ollama,pollinations">Nur Ollama lokal (+ Fallback)</option>
+          <option value="groq,pollinations">Nur Groq (+ Fallback)</option>
+          <option value="pollinations">Nur Pollinations (keylos)</option>
+        </select>
+      </label>
+      <label class="field">Ollama-URL (lokales Mini-Modell, auf dem Gerät/dem Pi im LAN)
+        <input type="text" id="setOllamaUrl" placeholder="http://localhost:11434">
+      </label>
+      <label class="field">Ollama-Modell (Pi 3B+: Tiny-Modell mit Tool-Calling)
+        <input type="text" id="setOllamaModel" placeholder="qwen2.5:0.5b">
+      </label>
+      <label class="field">Optionales Pi-Backend (Edge TTS + echte Pi-Werte, leer = aus)
+        <input type="text" id="setBackendUrl" placeholder="http://raspberrypi.local:8000">
+      </label>
+      <label class="field"><input type="checkbox" id="setPiMode"> Sparmodus (weniger Animation, z. B. im Pi-Browser)</label>
       <label class="field">Standort für Wetter
         <select id="setCity">
           <option value="berlin">Berlin</option>
@@ -147,22 +169,22 @@
         </select>
       </label>
       <div class="field"><b>KI-Anbieter (alle kostenlos, ohne Download):</b><div id="llmList" class="muted">Prüfe …</div></div>
-      <p class="muted small">⭐ <b>Empfehlung für den Pi: Groq</b> – kostenlosen Key auf
-      <b>console.groq.com</b> holen (keine Kreditkarte) und in die <code>.env</code> eintragen.
-      Ohne Keys läuft JARVIS über <b>Pollinations</b> oder den <b>Demo-Modus</b>.
-      Ganz offline geht es mit einem lokalen Mini-Modell (Ollama, z. B. <code>qwen2.5:0.5b</code>,
-      langsam, aber inkl. MCP): <code>./install-ollama-pi.sh</code> – Anleitung in <code>MCP.md</code>.</p>
+      <p class="muted small">⭐ <b>Empfehlung: Groq</b> – kostenlosen Key auf <b>console.groq.com</b> holen
+      (keine Kreditkarte) und oben eintragen. Der Key bleibt nur in diesem Browser
+      (oder als <code>GROQ_API_KEY</code> in der Vercel-Env). Ganz offline: lokales
+      Ollama-Mini-Modell (<code>qwen2.5:0.5b</code>) – inkl. MCP, siehe <code>MCP.md</code>.</p>
       <div class="field"><b>MCP-Server (Model Context Protocol):</b><div id="mcpList" class="muted">Prüfe …</div></div>
-      <p class="muted small">Beliebige MCP-Server in <code>mcp_servers.json</code> aktivieren – ihre Tools
-      stehen dann der KI (Groq/Gemini oder lokalem Modell) automatisch zur Verfügung. Bei Groq selbst
-      wird nichts hinzugefügt – JARVIS ist der MCP-Host. Details in <code>MCP.md</code>.</p>
+      <p class="muted small">Echte Remote-MCP-Server (z. B. <b>Composio</b> mit Gmail/Drive/Sheets)
+      im 🔌 MCP-Plugin eintragen – ihre Tools stehen der KI dann automatisch zur Verfügung.
+      JARVIS ist der MCP-Host, der Client läuft im Browser. Details in <code>MCP.md</code>.</p>
     </div>
   </div>
 </div>
 
-<footer class="foot">J.A.R.V.I.S v1.1 · Raspberry Pi 3B+ optimiert · 100 % kostenlos · Groq/Gemini (Free) + Edge TTS + MCP · Keine kostenpflichtigen APIs</footer>
+<footer class="foot">J.A.R.V.I.S v2.0 · Vercel-Edition ohne eigenes Backend · 100 % kostenlos · Groq (Free) / Ollama lokal + MCP (Composio & Co.) · Keine kostenpflichtigen APIs</footer>
 
 <script src="/static/js/app.js"></script>
+<script src="/static/js/mcp.js"></script>
 <script src="/static/js/voice.js"></script>
 <script src="/static/js/chat.js"></script>
 <script src="/static/js/plugins.js"></script>

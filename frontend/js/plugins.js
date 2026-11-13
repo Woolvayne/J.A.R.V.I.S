@@ -7,40 +7,94 @@ const PLUGINS = [
   { id: "weather", icon: "🌤", name: "Wetter", desc: "Live-Wetter via Open-Meteo (kein Key)",
     render(b) { b.innerHTML = `<p class="muted">Wetter wird links live angezeigt. Stadt in den Einstellungen änderbar.</p><button class="btn" onclick="loadWeather();closePlugin()">Aktualisieren</button>`; } },
 
-  { id: "system", icon: "🖥", name: "System", desc: "CPU / RAM / Disk (Backend)",
-    render(b) { b.innerHTML = `<p class="muted">Live-Werte links im System-Panel. Backend: <code>python backend/server.py</code></p>`; } },
+  { id: "system", icon: "🖥", name: "System", desc: "Geräte-Infos (Browser) oder Pi-Werte (optionales Backend)",
+    render(b) { b.innerHTML = `<p class="muted">Links siehst du Infos zu diesem Gerät (Kerne, RAM, Speicher). Für echte Pi-Werte (CPU/RAM/Temperatur) in den ⚙ Einstellungen die optionale Pi-Backend-URL eintragen.</p>`; } },
 
-  { id: "mcp", icon: "🔌", name: "MCP", desc: "Model Context Protocol: beliebige MCP-Server-Tools für die KI",
+  { id: "mcp", icon: "🔌", name: "MCP", desc: "Echte Remote-MCP-Server (z. B. Composio) direkt im Browser verbinden",
     render(b) {
       b.innerHTML = `
-        <p class="muted">Verbinde <b>beliebige MCP-Server</b> in <code>mcp_servers.json</code> (<code>"enabled": true</code>).
-        Ihre Tools stehen der KI (Groq/Gemini) dann automatisch zur Verfügung. Anleitung: <code>MCP.md</code>.</p>
-        <div class="row"><button class="btn" id="mcpReload">↻ Neu laden / verbinden</button></div>
+        <p class="muted">Verbinde <b>echte Remote-MCP-Server</b> (Streamable HTTP) – z. B. <b>Composio</b>
+        (Gmail, Drive, Sheets …). Die KI (Groq/Ollama) nutzt ihre Tools automatisch.
+        Serverdaten bleiben nur in diesem Browser. Anleitung: <code>MCP.md</code>.</p>
         <div id="mcpServers"><p class="muted">Verbinde …</p></div>
+        <div class="row"><button class="btn" id="mcpReload">↻ Neu verbinden</button>
+        <button class="btn ghost" id="mcpPresetComposio">+ Composio-Vorlage</button>
+        <button class="btn ghost" id="mcpPresetCustom">+ Eigener Server</button></div>
+        <div id="mcpEdit"></div>
         <h4 style="margin:14px 0 6px">Tool testen</h4>
         <div class="row"><select id="mcpToolSel" style="flex:1;background:#04101f;color:#fff;border:1px solid var(--line);border-radius:10px;padding:10px"><option value="">– Tool wählen –</option></select></div>
-        <div class="row"><textarea id="mcpArgs" rows="3" style="flex:1;background:#04101f;color:#fff;border:1px solid var(--line);border-radius:10px;padding:10px" placeholder='Argumente als JSON, z. B. {} oder {"city":"Berlin"}'></textarea></div>
+        <div class="row"><textarea id="mcpArgs" rows="3" style="flex:1;background:#04101f;color:#fff;border:1px solid var(--line);border-radius:10px;padding:10px" placeholder='Argumente als JSON, z. B. {}'></textarea></div>
         <div class="row"><button class="btn" id="mcpCall">Tool ausführen</button></div>
-        <div class="result" id="mcpOut">Bereit. Oder frag einfach im Chat – z. B. „Wie spät ist es in Tokio?“ (mit aktivem Time-Server).</div>`;
-      const draw = async (reload) => {
+        <div class="result" id="mcpOut">Bereit. Danach einfach im Chat fragen – z. B. „Zeig meine letzten E-Mails“ (mit Composio-Gmail).</div>`;
+
+      const draw = async (force) => {
         $("#mcpServers").innerHTML = '<p class="muted">Verbinde …</p>';
         try {
-          const r = await fetch(API + (reload ? "/api/mcp/reload" : "/api/mcp/status"), reload ? { method: "POST" } : {});
-          if (!r.ok) throw new Error("Backend?");
-          const d = await r.json();
+          if (force) await Mcp.refresh();
+          const d = await Mcp.status();
+          const list = Mcp.loadServers();
           $("#mcpServers").innerHTML =
-            `<div class="kv"><span>MCP aktiv</span><b>${d.enabled ? "ja" : "nein (MCP_ENABLED=0)"}</b></div>` +
-            d.servers.map((s) =>
-              `<div class="kv"><span>${s.connected ? "✅" : s.enabled ? "❌" : "⚪"} ${escapeHtml(s.name)} <small class="muted">(${escapeHtml(s.transport)}${s.error ? " – " + escapeHtml(s.error) : ""})</small></span><b>${s.enabled ? s.tools + " Tools" : "inaktiv"}</b></div>`).join("") +
-            `<p class="muted small">Gesamt: ${d.tool_count} Tools · Konfig: <code>${escapeHtml(d.config_file || "mcp_servers.json")}</code></p>`;
+            (list.length ? list.map((s, i) => {
+              const st = d.servers.find((x) => x.name === s.name) || {};
+              return `<div class="kv"><span>${st.connected ? "✅" : s.enabled ? "❌" : "⚪"} <b>${escapeHtml(s.name)}</b>
+                <small class="muted">${escapeHtml(s.url || "")}${st.error ? " – " + escapeHtml(st.error) : ""}</small></span>
+                <span><label class="muted small"><input type="checkbox" data-mcp-toggle="${i}" ${s.enabled ? "checked" : ""}> an</label>
+                <button class="btn ghost" data-mcp-edit="${i}">✎</button>
+                <button class="btn ghost" data-mcp-del="${i}">✕</button></span></div>`;
+            }).join("") : '<p class="muted">Noch keine Server. Lege unten eine Composio-Vorlage an.</p>') +
+            `<p class="muted small">Gesamt: ${d.tool_count} Tools verfügbar</p>`;
           $("#mcpToolSel").innerHTML = '<option value="">– Tool wählen –</option>' +
             d.tools.map((t) => `<option value="${escapeHtml(t.name)}" title="${escapeHtml(t.description)}">${escapeHtml(t.name)}</option>`).join("");
+          b.querySelectorAll("[data-mcp-toggle]").forEach((el) => el.onchange = () => {
+            const l = Mcp.loadServers(); l[+el.dataset.mcpToggle].enabled = el.checked; Mcp.saveServers(l); draw(true);
+          });
+          b.querySelectorAll("[data-mcp-del]").forEach((el) => el.onclick = () => {
+            const l = Mcp.loadServers(); l.splice(+el.dataset.mcpDel, 1); Mcp.saveServers(l); draw(true);
+          });
+          b.querySelectorAll("[data-mcp-edit]").forEach((el) => el.onclick = () => editForm(+el.dataset.mcpEdit));
           if (typeof loadMcpPill === "function") loadMcpPill();
-        } catch {
-          $("#mcpServers").innerHTML = '<p class="muted">MCP braucht das Backend (auf dem Pi läuft es als Dienst). Datei <code>mcp_servers.json</code> im Projektordner bearbeiten.</p>';
+        } catch (e) {
+          $("#mcpServers").innerHTML = '<p class="muted">MCP-Client-Fehler: ' + escapeHtml(String(e.message || e)) + "</p>";
         }
       };
+
+      const editForm = (idx, preset) => {
+        const l = Mcp.loadServers();
+        const s = preset || l[idx] || { name: "", url: "", headers: {}, via: "proxy", enabled: true };
+        $("#mcpEdit").innerHTML = `
+          <div class="row"><input id="meName" placeholder="Name (z. B. composio)" value="${escapeHtml(s.name || "")}">
+          <select id="meVia" style="background:#04101f;color:#fff;border:1px solid var(--line);border-radius:10px;padding:10px">
+            <option value="proxy" ${s.via === "proxy" ? "selected" : ""}>Weg: Vercel-Proxy (empfohlen)</option>
+            <option value="auto" ${s.via === "auto" ? "selected" : ""}>Weg: auto (direkt → Proxy)</option>
+            <option value="direct" ${s.via === "direct" ? "selected" : ""}>Weg: direkt (nur mit CORS)</option>
+          </select></div>
+          <div class="row"><input id="meUrl" placeholder="MCP-URL (https://…)" value="${escapeHtml(s.url || "")}"></div>
+          <div class="row"><textarea id="meHeaders" rows="2" style="flex:1;background:#04101f;color:#fff;border:1px solid var(--line);border-radius:10px;padding:10px" placeholder='Header als JSON, z. B. {"x-api-key":"ak_…"}'>${escapeHtml(JSON.stringify(s.headers || {}))}</textarea></div>
+          ${preset && preset.hint ? `<p class="muted small">${escapeHtml(preset.hint)}</p>` : ""}
+          <div class="row"><button class="btn" id="meSave">Speichern & verbinden</button>
+          <button class="btn ghost" id="meCancel">Abbrechen</button></div>`;
+        $("#meCancel").onclick = () => ($("#mcpEdit").innerHTML = "");
+        $("#meSave").onclick = () => {
+          let headers = {};
+          try { headers = JSON.parse($("#meHeaders").value.trim() || "{}"); }
+          catch { $("#mcpOut").textContent = "Header sind kein gültiges JSON."; return; }
+          const entry = {
+            name: ($("#meName").value.trim() || "server").replace(/\s+/g, "-"),
+            url: $("#meUrl").value.trim(),
+            headers, via: $("#meVia").value, enabled: true,
+          };
+          if (!entry.url) { $("#mcpOut").textContent = "Bitte eine MCP-URL eintragen."; return; }
+          const list2 = Mcp.loadServers();
+          if (idx != null && !preset) list2[idx] = entry; else list2.push(entry);
+          Mcp.saveServers(list2);
+          $("#mcpEdit").innerHTML = "";
+          draw(true);
+        };
+      };
+
       $("#mcpReload").onclick = () => draw(true);
+      $("#mcpPresetComposio").onclick = () => editForm(null, { ...Mcp.presets.composio });
+      $("#mcpPresetCustom").onclick = () => editForm(null, { name: "", url: "https://", headers: {}, via: "proxy", enabled: true });
       $("#mcpCall").onclick = async () => {
         const name = $("#mcpToolSel").value;
         if (!name) { $("#mcpOut").textContent = "Bitte zuerst ein Tool wählen, Sir."; return; }
@@ -48,14 +102,7 @@ const PLUGINS = [
         try { args = JSON.parse($("#mcpArgs").value.trim() || "{}"); }
         catch { $("#mcpOut").textContent = "Argumente sind kein gültiges JSON."; return; }
         $("#mcpOut").textContent = "Führe " + name + " aus …";
-        try {
-          const r = await fetch(API + "/api/mcp/call", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, arguments: args }),
-          });
-          const d = await r.json();
-          $("#mcpOut").textContent = d.result || JSON.stringify(d);
-        } catch { $("#mcpOut").textContent = "Aufruf fehlgeschlagen (Backend/Netzwerk)."; }
+        $("#mcpOut").textContent = await Mcp.callTool(name, args);
       };
       draw(false);
     } },
@@ -169,11 +216,11 @@ const PLUGINS = [
       $("#wQ").onkeydown = (e) => e.key === "Enter" && go();
     } },
 
-  { id: "news", icon: "📰", name: "News", desc: "RSS-Nachrichten (Backend-Proxy)",
+  { id: "news", icon: "📰", name: "News", desc: "RSS-Nachrichten (Vercel-Function / direkt)",
     render(b) { b.innerHTML = `<p class="muted">Die aktuellen Schlagzeilen stehen rechts im News-Panel. Feed oben wählbar.</p><button class="btn" onclick="loadNews();closePlugin()">Neu laden</button>`; } },
 
   { id: "crypto", icon: "₿", name: "Krypto", desc: "BTC / ETH / SOL (CoinGecko)",
-    render(b) { b.innerHTML = `<p class="muted">Kurse stehen rechts im Krypto-Panel (Backend nötig).</p><button class="btn" onclick="loadCrypto();closePlugin()">Neu laden</button>`; } },
+    render(b) { b.innerHTML = `<p class="muted">Kurse stehen rechts im Krypto-Panel (CoinGecko direkt aus dem Browser).</p><button class="btn" onclick="loadCrypto();closePlugin()">Neu laden</button>`; } },
 
   { id: "github", icon: "🐙", name: "GitHub", desc: "Profile & Repos (öffentliche API)",
     render(b) {
@@ -231,13 +278,14 @@ const PLUGINS = [
       const draw = async () => {
         $("#fPath").textContent = cur;
         try {
-          const r = await fetch(`${API}/api/files?path=${encodeURIComponent(cur)}`);
+          if (!state.backendUrl) throw new Error("kein Backend");
+          const r = await fetch(`${state.backendUrl}/api/files?path=${encodeURIComponent(cur)}`);
           if (!r.ok) throw new Error("nf");
           const d = await r.json();
           $("#fList").innerHTML = d.items.map((i) =>
             `<div class="file-item" data-p="${escapeHtml(i.name)}" data-t="${i.type}"><span>${i.type === "dir" ? "📁" : "📄"} ${escapeHtml(i.name)}</span><small class="muted">${i.size != null ? (i.size / 1024).toFixed(1) + " KB" : ""}</small></div>`).join("") || '<p class="muted">Leer.</p>';
           b.querySelectorAll(".file-item").forEach((el) => el.onclick = () => { if (el.dataset.t === "dir") { cur = cur === "." ? el.dataset.p : cur + "/" + el.dataset.p; draw(); } });
-        } catch { $("#fList").innerHTML = '<p class="muted">Dateimanager braucht das Backend: <code>python backend/server.py</code></p>'; }
+        } catch { $("#fList").innerHTML = '<p class="muted">Der Dateimanager braucht das optionale Pi-Backend (⚙ Einstellungen: Backend-URL, z. B. http://raspberrypi.local:8000). Ohne Backend ist er deaktiviert – auf Vercel gibt es bewusst keinen Dateizugriff.</p>'; }
       };
       $("#fUp").onclick = () => { cur = cur.includes("/") ? cur.split("/").slice(0, -1).join("/") || "." : "."; draw(); };
       draw();

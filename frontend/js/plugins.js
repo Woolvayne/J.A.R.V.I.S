@@ -15,10 +15,36 @@ const PLUGINS = [
       b.innerHTML = `
         <p class="muted">Verbinde <b>echte Remote-MCP-Server</b> (Streamable HTTP) – z. B. <b>Composio</b>
         (Gmail, Drive, Sheets …). Die KI (Groq/Ollama) nutzt ihre Tools automatisch.
-        Serverdaten bleiben nur in diesem Browser. Anleitung: <code>MCP.md</code>.</p>
+        Serverdaten bleiben nur in diesem Browser. Ausführlich: <code>MCP.md</code>.</p>
+        <details class="guide"><summary>📖 Composio: MCP-URL herausfinden (≈ 2 Min)</summary>
+          <ol class="steps">
+            <li>Auf <b>composio.dev</b> einloggen (kostenloser Account genügt).</li>
+            <li>Im Dashboard einen <b>MCP-Server / Tool Router</b> anlegen (Menü „MCP“ bzw. „Tool Router“ – die Bezeichnung variiert leicht).</li>
+            <li><b>Toolkits</b> auswählen (z. B. Gmail, Google Drive, Sheets) und deine Accounts per OAuth verbinden („Connect“).</li>
+            <li>Composio zeigt danach die <b>MCP-URL</b> an – kopieren. Sie sieht so aus:<br>
+              <code>https://backend.composio.dev/v3/mcp/DEINE_SERVER_ID?user_id=DEINE_USER_ID</code></li>
+            <li>Deinen <b>API-Key</b> (<code>ak_…</code>) findest du in Composio unter <b>Settings → API Keys</b>.</li>
+            <li>Unten auf <b>„+ Composio-Vorlage“</b> tippen, URL einfügen und im Header-Feld
+              <code>{"x-api-key": "ak_…"}</code> mit deinem Key ausfüllen → <b>„Speichern &amp; verbinden“</b>. Fertig – oben erscheint ✅ mit der Tool-Anzahl.</li>
+          </ol>
+          <p class="muted small" style="padding:0 12px 10px">Alternative „Composio Connect“: URL <code>https://connect.composio.dev/mcp</code> mit Header <code>{"x-consumer-api-key": "ck_…"}</code> (anderer Key-Typ!) – dafür unten einfach den Button <b>„+ Composio Connect“</b> nutzen und nur noch deinen <code>ck_…</code>-Key einsetzen.</p>
+        </details>
+        <details class="guide"><summary>➕ MCP-Server hinzufügen – so geht's generell</summary>
+          <ol class="steps">
+            <li><b>Begriffe:</b> J.A.R.V.I.S ist der <b>MCP-Client (Host)</b> – er ist schon eingebaut. „Hinzufügen“ heißt hier: einen <b>MCP-Server</b> eintragen, dessen Tools die KI dann nutzen darf. Einen separaten Client musst du nicht installieren.</li>
+            <li>Auf <b>„+ Eigener Server“</b> tippen (oder die Composio-Vorlage oben nutzen).</li>
+            <li><b>Name</b> vergeben (z. B. <code>composio</code>), die <b>MCP-URL</b> des Anbieters einfügen (muss <code>https://</code> sein, Streamable HTTP).</li>
+            <li><b>Header</b> als JSON eintragen, falls der Anbieter einen Key verlangt, z. B. <code>{"x-api-key": "ak_…"}</code> oder <code>{"Authorization": "Bearer …"}</code> – sonst <code>{}</code>.</li>
+            <li><b>Weg: „Vercel-Proxy“</b> lassen (empfohlen – umgeht CORS). Nur Server, die Browser-Zugriffe selbst erlauben, gehen „direkt“.</li>
+            <li><b>„Speichern &amp; verbinden“</b> → Status oben: ✅ = verbunden, daneben die Anzahl der gefundenen Tools. Mit <b>„Tool testen“</b> unten kannst du ein Tool direkt ausprobieren.</li>
+            <li>Danach einfach im <b>Chat</b> fragen („Zeig meine letzten E-Mails“) – Groq/Ollama ruft die MCP-Tools automatisch auf. Mit der Checkbox „an“ schaltest du Server einzeln an/aus, ✎ bearbeiten, ✕ löschen.</li>
+            <li class="muted">Grenze: Lokale stdio-Server (<code>npx …</code>/<code>uvx …</code>) kann ein Browser nicht starten – nur Remote-HTTP-Server. Für stdio gibt es optional das Pi-Backend (siehe MCP.md).</li>
+          </ol>
+        </details>
         <div id="mcpServers"><p class="muted">Verbinde …</p></div>
         <div class="row"><button class="btn" id="mcpReload">↻ Neu verbinden</button>
         <button class="btn ghost" id="mcpPresetComposio">+ Composio-Vorlage</button>
+        <button class="btn ghost" id="mcpPresetConnect">+ Composio Connect</button>
         <button class="btn ghost" id="mcpPresetCustom">+ Eigener Server</button></div>
         <div id="mcpEdit"></div>
         <h4 style="margin:14px 0 6px">Tool testen</h4>
@@ -94,6 +120,7 @@ const PLUGINS = [
 
       $("#mcpReload").onclick = () => draw(true);
       $("#mcpPresetComposio").onclick = () => editForm(null, { ...Mcp.presets.composio });
+      $("#mcpPresetConnect").onclick = () => editForm(null, { ...Mcp.presets.composioConnect });
       $("#mcpPresetCustom").onclick = () => editForm(null, { name: "", url: "https://", headers: {}, via: "proxy", enabled: true });
       $("#mcpCall").onclick = async () => {
         const name = $("#mcpToolSel").value;

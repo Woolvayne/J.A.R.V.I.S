@@ -246,6 +246,7 @@ async function loadCrypto() {
 const orb = $("#orb"), octx = orb.getContext("2d");
 let orbMode = "idle", orbT = 0, orbFrame = 0;
 function drawOrb() {
+  if (document.hidden) { requestAnimationFrame(drawOrb); return; } // Safari/iPad: Akku sparen, wenn Tab unsichtbar
   orbFrame++;
   if (state.pi && orbFrame % 2 === 1) { requestAnimationFrame(drawOrb); return; } // Sparmodus: ~30 FPS
   orbT += 0.02;

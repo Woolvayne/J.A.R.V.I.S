@@ -22,23 +22,44 @@ Seit v2 läuft J.A.R.V.I.S **ohne eigenes Backend auf Vercel**. Deshalb gilt:
 Composio stellt dir einen fertigen Remote-MCP-Server mit deinen verbundenen
 Accounts bereit (OAuth macht Composio). So geht's:
 
+So findest du deine **Composio-MCP-URL** (die gleiche Anleitung steht auch
+direkt im 🔌 MCP-Plugin unter „📖 Composio: MCP-URL herausfinden“):
+
 1. Auf [composio.dev](https://composio.dev) einloggen (Free Tier genügt).
-2. **MCP-Server erstellen** (Dashboard → MCP / Tool Router):
-   Toolkits wählen, z. B. **Gmail**, **Google Drive**, **Google Sheets**,
-   und die Accounts per OAuth verbinden.
-3. Du erhältst eine **MCP-URL** wie
+2. **MCP-Server / Tool Router anlegen** (Dashboard → „MCP“ bzw. „Tool Router“;
+   die Menübezeichnung variiert leicht).
+3. **Toolkits wählen**, z. B. **Gmail**, **Google Drive**, **Google Sheets**,
+   und die Accounts per OAuth verbinden („Connect“).
+4. Composio zeigt danach die **MCP-URL** an – kopieren. Erkennungsmerkmal:
    `https://backend.composio.dev/v3/mcp/DEINE_SERVER_ID?user_id=DEINE_USER_ID`
-   und deinen **API-Key** (`ak_…`).
-4. In J.A.R.V.I.S: 🔌 **MCP-Plugin → „+ Composio-Vorlage“**:
-   - URL aus Schritt 3 eintragen
-   - Header: `{"x-api-key": "ak_…"}` (mit deinem Key)
-   - „Speichern & verbinden“ – die Tools erscheinen (z. B. `composio__GMAIL_FETCH_EMAILS`)
-5. Jetzt einfach im Chat fragen: *„Zeig meine letzten E-Mails“* oder
+   (Technisch ist das die URL einer Tool-Router-Session, `session.mcp.url`;
+   Authentifizierung per Header `x-api-key`.)
+5. Deinen **API-Key** (`ak_…`) findest du unter **Settings → API Keys**.
+6. In J.A.R.V.I.S: 🔌 **MCP-Plugin → „+ Composio-Vorlage“**:
+   - URL aus Schritt 4 eintragen
+   - Header: `{"x-api-key": "ak_…"}` (mit deinem Key aus Schritt 5)
+   - Weg: „Vercel-Proxy“ → „Speichern & verbinden“ – oben erscheint ✅ und
+     die Tools (z. B. `composio__GMAIL_FETCH_EMAILS`)
+7. Jetzt einfach im Chat fragen: *„Zeig meine letzten E-Mails“* oder
    *„Fasse die Mail von gestern zusammen“*. Im Chat steht dann
    `via groq · 🔌 composio__…`.
 
 Alternativ **Composio Connect**: URL `https://connect.composio.dev/mcp` mit
-Header `{"x-consumer-api-key": "ck_…"}`.
+Header `{"x-consumer-api-key": "ck_…"}` (anderer Key-Typ als `ak_…`!).
+
+### „MCP-Client hinzufügen“ – was heißt das hier?
+
+Du musst **keinen Client installieren**: J.A.R.V.I.S selbst ist der
+MCP-Client (Host) – der Browser verbindet die Server, holt per `tools/list`
+die Tool-Liste und reicht sie an Groq/Ollama weiter. „Hinzufügen“ bedeutet
+also nur: im MCP-Plugin einen **Server eintragen** (Name, URL, Header-JSON,
+Weg „Vercel-Proxy“) und „Speichern & verbinden“. Mehrere Server parallel
+sind möglich; pro Server Checkbox „an/aus“, ✎ Bearbeiten, ✕ Löschen,
+plus „Tool testen“ zum Ausprobieren einzelner Tools.
+
+Dieselbe Composio-URL + Header kannst du übrigens auch in anderen
+MCP-Clients (z. B. Claude/Cursor, Streamable HTTP) verwenden – in J.A.R.V.I.S
+bleibt alles im Browser (localStorage), ohne Backend.
 
 > Die Serverliste (inkl. Keys) liegt **nur in deinem Browser** (localStorage).
 > URLs/Keys sind wie Passwörter – nicht teilen, nicht committen.

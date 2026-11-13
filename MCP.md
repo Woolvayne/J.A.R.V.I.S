@@ -47,6 +47,13 @@ direkt im 🔌 MCP-Plugin unter „📖 Composio: MCP-URL herausfinden“):
 Alternativ **Composio Connect**: URL `https://connect.composio.dev/mcp` mit
 Header `{"x-consumer-api-key": "ck_…"}` (anderer Key-Typ als `ak_…`!).
 
+> **In diesem Deployment schon erledigt:** Der Connect-Key liegt als
+> `COMPOSIO_CONSUMER_KEY` in der Vercel-Env. `/api/mcp` trägt ihn bei
+> `connect.composio.dev` serverseitig als `x-consumer-api-key` ein, und
+> das Dashboard legt den Server `composio-connect` beim Start automatisch
+> an (Header im Browser bleibt `{}` – der Key steht nirgends im Code/Git).
+> Manuell geht es trotzdem: „+ Composio Connect“ → speichern.
+
 ### „MCP-Client hinzufügen“ – was heißt das hier?
 
 Du musst **keinen Client installieren**: J.A.R.V.I.S selbst ist der

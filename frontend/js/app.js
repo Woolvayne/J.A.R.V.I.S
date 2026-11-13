@@ -285,6 +285,31 @@ function setOrb(mode, text) {
 }
 
 /* ------------------------------------------- Vercel-Erkennung + MCP-Pille */
+// Ist der Composio-Connect-Key in der Vercel-Env hinterlegt, legt JARVIS den
+// MCP-Server automatisch an (Header bleibt leer – /api/mcp trägt den Key
+// serverseitig ein). Ein Platzhalter-Key im Browser wird dabei bereinigt.
+function ensureComposioConnect(health) {
+  try {
+    if (!health || !health.composio_connect || typeof Mcp === "undefined") return;
+    const url = "https://connect.composio.dev/mcp";
+    const list = Mcp.loadServers();
+    let changed = false;
+    let found = list.find((s) => s.url === url || s.name === "composio-connect");
+    if (found) {
+      if (found.url !== url) { found.url = url; changed = true; }
+      if (found.via !== "proxy") { found.via = "proxy"; changed = true; }
+      const vals = Object.values(found.headers || {}).map(String);
+      if (!vals.length || vals.some((v) => v.includes("DEIN"))) {
+        if (vals.length) { found.headers = {}; changed = true; }
+      }
+    } else {
+      list.push({ name: "composio-connect", url, headers: {}, via: "proxy", enabled: true });
+      changed = true;
+    }
+    if (changed) Mcp.saveServers(list);
+  } catch { /* MCP bleibt manuell konfigurierbar */ }
+}
+
 async function fetchHealth() {
   if (state.pi) { document.body.classList.add("pi"); }
   try {
@@ -293,6 +318,7 @@ async function fetchHealth() {
     const d = await r.json();
     state.functions = true;
     state.llmEnv = d.llm_env || {};
+    ensureComposioConnect(d);
   } catch { /* reiner Browser-Modus (statisch) */ }
 }
 

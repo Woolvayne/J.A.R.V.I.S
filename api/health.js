@@ -13,5 +13,9 @@ export default function handler(req, res) {
       mistral: Boolean(process.env.MISTRAL_API_KEY),
     },
     mcp_proxy: true,
+    // Nur "ist gesetzt?" – der Key selbst wird nie ausgegeben. Ist er da,
+    // trägt /api/mcp ihn bei connect.composio.dev serverseitig ein und das
+    // Dashboard legt den MCP-Server automatisch (ohne Key im Browser) an.
+    composio_connect: Boolean(process.env.COMPOSIO_CONSUMER_KEY),
   });
 }

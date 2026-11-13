@@ -41,11 +41,15 @@ sudo systemctl restart jarvis    # z. B. nach .env-Änderung
 
 Ohne systemd (z. B. zum Testen): `./start.sh` – erkennt ARM automatisch.
 
-### Warum läuft die KI nicht auf dem Pi?
+### Warum läuft die KI (standardmäßig) nicht auf dem Pi?
 
-Ein 3B+ hat 1 GB RAM – selbst kleine lokale LLMs wären quälend langsam.
-Deshalb: **Intelligenz aus der Gratis-Cloud, der Pi bleibt schlank.**
-Ollama ist vorhanden, aber per `ENABLE_OLLAMA=1` nur für stärkere Geräte gedacht.
+Ein 3B+ hat 1 GB RAM – große lokale LLMs sind damit nicht sinnvoll.
+Deshalb standardmäßig: **Intelligenz aus der Gratis-Cloud, der Pi bleibt schlank.**
+
+**Optional geht lokal doch was:** Mit `./install-ollama-pi.sh` läuft ein
+Mini-Modell (`qwen2.5:0.5b`, ~400 MB) offline auf dem Pi – langsam
+(3–6 Token/s), aber **inklusive MCP-Tool-Calling**. Details & Modell-Tabelle
+in **MCP.md** Abschnitt 4. Empfehlung: Hybrid `LLM_ORDER=ollama,groq,demo`.
 
 ### Pi-Tuning (schon eingebaut)
 
@@ -78,10 +82,12 @@ die obige Gratis-Kette (Groq & Co.). Stimme: Edge TTS (`rany2/edge-tts`), keylos
 
 ## 🔌 MCP – jeden Connector verbinden
 
-Kurzanleitung: Server in `mcp_servers.json` auf `"enabled": true` setzen →
-im Dashboard 🔌 MCP → „Neu laden“. Die KI nutzt die Tools ab dann automatisch
-(z. B. Time-/Filesystem-Server). JARVIS selbst als MCP-Server für Claude
-Desktop: `backend/mcp_server.py`. **Ausführlich: [MCP.md](MCP.md)**
+**Bei Groq wird kein MCP „hinzugefügt“** – Groq ist nur das Modell, JARVIS
+ist der MCP-Host: Server in `mcp_servers.json` auf `"enabled": true` setzen →
+im Dashboard 🔌 MCP → „Neu laden“. Die KI (Groq/Gemini oder lokales
+Mini-Modell) nutzt die Tools ab dann automatisch. JARVIS selbst als
+MCP-Server für Claude Desktop: `backend/mcp_server.py`.
+**Ausführlich: [MCP.md](MCP.md)**
 
 ## 🎙 Beispiele (Text oder Mikrofon)
 
@@ -131,7 +137,7 @@ backend/    server.py · llm.py · tts.py · mcp_client.py · mcp_server.py
 frontend/   index.html · css/style.css · js/{app,voice,chat,plugins}.js
 deploy/     jarvis.service (systemd-Vorlage)
 mcp_servers.json  MCP-Serverliste (Beispiele deaktiviert)
-install-pi.sh · start.sh/start.bat · requirements-pi.txt · MCP.md · PLUGINS.md
+install-pi.sh · install-ollama-pi.sh (lokales Mini-Modell) · start.sh/start.bat · requirements-pi.txt · MCP.md · PLUGINS.md
 ```
 
 Inspiriert von JARVIS-HUD-Projekten auf GitHub; gebaut mit FastAPI,

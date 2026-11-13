@@ -14,11 +14,14 @@ Empfohlene Reihenfolge (alle kostenlos, ohne Download, nur API-Key):
   6. Pollinations – keyloser Notfall-Fallback (kein Tool-Calling)
   7. Demo-Modus – regelbasiert, offline, immer verfügbar
 
-Ollama (lokal) ist auf dem Pi standardmäßig DEAKTIVIERT (ENABLE_OLLAMA=1
-aktiviert es – nur für leistungsstärkere Geräte sinnvoll).
+Ollama (lokal) ist optional: Auf dem Pi 3B+ laufen nur Tiny-Modelle sinnvoll
+(qwen2.5:0.5b, llama3.2:1b) – langsam, aber offline UND mit MCP-Tool-Calling.
+Aktivierung: ./install-ollama-pi.sh, ENABLE_OLLAMA=1, LLM_ORDER z. B.
+LLM_ORDER=ollama,groq,demo (lokal zuerst, Cloud als Backup).
 
 Reihenfolge per LLM_ORDER änderbar, z. B. LLM_ORDER=gemini,groq,demo
-MCP-Tools werden automatisch genutzt, wenn der Anbieter Tool-Calling kann.
+MCP-Tools werden automatisch genutzt, wenn der Anbieter Tool-Calling kann
+(Groq, Gemini, Cerebras, Mistral, OpenRouter und Ollama mit Tool-Modellen).
 """
 from __future__ import annotations
 
@@ -102,7 +105,7 @@ DEFAULT_ORDER = "groq,gemini,cerebras,mistral,openrouter,pollinations,demo"
 def _order() -> list[str]:
     order = [p.strip().lower() for p in os.getenv("LLM_ORDER", DEFAULT_ORDER).split(",") if p.strip()]
     if os.getenv("ENABLE_OLLAMA", "0").lower() in ("1", "true", "yes") and "ollama" not in order:
-        order.insert(0, "ollama")  # nur wenn ausdrücklich aktiviert (nicht für Pi 3B+)
+        order.insert(0, "ollama")  # nur wenn ausdrücklich aktiviert (Mini-Modell, siehe install-ollama-pi.sh)
     if "demo" not in order:
         order.append("demo")
     return order
@@ -166,14 +169,49 @@ def _pollinations(messages: list[dict]) -> str:
     return r.text.strip()
 
 
-def _ollama(messages: list[dict]) -> str:
+def _ollama_enabled() -> bool:
+    return os.getenv("ENABLE_OLLAMA", "0").lower() in ("1", "true", "yes")
+
+
+def _ollama_chat(messages: list[dict], tools: list[dict] | None,
+                 tool_executor) -> tuple[str, list[str]]:
+    """Lokales Mini-Modell per Ollama – MIT MCP-Tool-Calling.
+
+    Für den Pi 3B+ nur Tiny-Modelle (Default qwen2.5:0.5b). Unterstützte
+    Modelle (z. B. qwen2.5, llama3.2) liefern message.tool_calls zurück.
+    Lokale Inferenz ist langsam -> großzügiges OLLAMA_TIMEOUT (Standard 120 s).
+    """
     base = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    model = os.getenv("OLLAMA_MODEL", "llama3.1")
-    r = requests.post(f"{base.rstrip('/')}/api/chat",
-                      json={"model": model, "messages": _normalize(messages), "stream": False},
-                      timeout=TIMEOUT)
-    r.raise_for_status()
-    return r.json()["message"]["content"].strip()
+    model = os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
+    timeout = float(os.getenv("OLLAMA_TIMEOUT", "120"))
+    msgs = _normalize(messages)
+    used: list[str] = []
+    use_tools = bool(tools and tool_executor)
+    for _round in range(MAX_TOOL_ROUNDS + 1):
+        payload: dict = {"model": model, "messages": msgs, "stream": False}
+        if use_tools:
+            payload["tools"] = tools
+        r = requests.post(f"{base.rstrip('/')}/api/chat", json=payload, timeout=timeout)
+        r.raise_for_status()
+        msg = r.json().get("message", {})
+        tool_calls = msg.get("tool_calls") or []
+        if not (use_tools and tool_calls):
+            return (msg.get("content") or "").strip(), used
+        msgs.append({"role": "assistant", "content": msg.get("content") or "",
+                     "tool_calls": tool_calls})
+        for tc in tool_calls:
+            fn = tc.get("function") or {}
+            name = fn.get("name", "")
+            args = fn.get("arguments") or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args or "{}")
+                except Exception:
+                    args = {}
+            result = tool_executor(name, args)  # MCP-Aufruf (wirft nicht)
+            used.append(name)
+            msgs.append({"role": "tool", "content": str(result)[:6000]})
+    return "Die Tool-Aufrufe haben zu viele Runden benötigt, Sir.", used
 
 
 # ---------------------------------------------------------------- Demo-Modus
@@ -227,11 +265,11 @@ def chat(messages: list[dict], tools: list[dict] | None = None, tool_executor=No
                 if text:
                     return {"text": text, "provider": "pollinations", "tools_used": []}
             elif pid == "ollama":
-                if os.getenv("ENABLE_OLLAMA", "0").lower() not in ("1", "true", "yes"):
+                if not _ollama_enabled():
                     continue
-                text = _ollama(messages)
+                text, used = _ollama_chat(messages, tools, tool_executor)
                 if text:
-                    return {"text": text, "provider": "ollama", "tools_used": []}
+                    return {"text": text, "provider": "ollama", "tools_used": used}
             elif pid == "demo":
                 return {"text": _demo(messages), "provider": "demo", "tools_used": []}
         except Exception:
@@ -257,11 +295,11 @@ def status() -> dict:
                               "key_needed": False, "tools": False, "recommended": False,
                               "note": "Keyloser Notfall-Fallback", "model": "openai"})
         elif pid == "ollama":
-            on = os.getenv("ENABLE_OLLAMA", "0").lower() in ("1", "true", "yes")
-            providers.append({"id": pid, "name": "Ollama (lokal)", "available": on,
-                              "key_needed": False, "tools": False, "recommended": False,
-                              "note": "Auf Pi 3B+ deaktiviert (zu wenig RAM) – ENABLE_OLLAMA=1 zum Aktivieren",
-                              "model": os.getenv("OLLAMA_MODEL", "llama3.1")})
+            on = _ollama_enabled()
+            providers.append({"id": pid, "name": "Ollama (lokal, Mini-Modell)", "available": on,
+                              "key_needed": False, "tools": True, "recommended": False,
+                              "note": "Offline auf dem Pi, inkl. MCP-Tools. Nur Tiny-Modelle (qwen2.5:0.5b / llama3.2:1b), langsam. Aktivieren: ENABLE_OLLAMA=1 + ./install-ollama-pi.sh",
+                              "model": os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")})
         elif pid == "demo":
             providers.append({"id": pid, "name": "Demo-Modus (offline)", "available": True,
                               "key_needed": False, "tools": False, "recommended": False,

@@ -149,11 +149,13 @@
       <div class="field"><b>KI-Anbieter (alle kostenlos, ohne Download):</b><div id="llmList" class="muted">Prüfe …</div></div>
       <p class="muted small">⭐ <b>Empfehlung für den Pi: Groq</b> – kostenlosen Key auf
       <b>console.groq.com</b> holen (keine Kreditkarte) und in die <code>.env</code> eintragen.
-      Ohne Keys läuft JARVIS über <b>Pollinations</b> oder den <b>Demo-Modus</b>. Lokale KI (Ollama)
-      ist auf dem Pi 3B+ deaktiviert (zu wenig RAM).</p>
+      Ohne Keys läuft JARVIS über <b>Pollinations</b> oder den <b>Demo-Modus</b>.
+      Ganz offline geht es mit einem lokalen Mini-Modell (Ollama, z. B. <code>qwen2.5:0.5b</code>,
+      langsam, aber inkl. MCP): <code>./install-ollama-pi.sh</code> – Anleitung in <code>MCP.md</code>.</p>
       <div class="field"><b>MCP-Server (Model Context Protocol):</b><div id="mcpList" class="muted">Prüfe …</div></div>
       <p class="muted small">Beliebige MCP-Server in <code>mcp_servers.json</code> aktivieren – ihre Tools
-      stehen dann der KI automatisch zur Verfügung. Details in <code>MCP.md</code>.</p>
+      stehen dann der KI (Groq/Gemini oder lokalem Modell) automatisch zur Verfügung. Bei Groq selbst
+      wird nichts hinzugefügt – JARVIS ist der MCP-Host. Details in <code>MCP.md</code>.</p>
     </div>
   </div>
 </div>

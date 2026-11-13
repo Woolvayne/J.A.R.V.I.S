@@ -1,0 +1,9 @@
+# J.A.R.V.I.S – Abhängigkeiten für Raspberry Pi 3B+ (leichtgewichtig)
+# Bewusst OHNE uvicorn[standard] (spart uvloop/watchfiles-Builds auf ARM)
+# und ohne MCP-SDK: Der MCP-Client nutzt nur die Standardbibliothek.
+fastapi>=0.110
+uvicorn>=0.29
+edge-tts>=6.1
+psutil>=5.9
+requests>=2.31
+python-dotenv>=1.0

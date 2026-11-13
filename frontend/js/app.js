@@ -25,8 +25,8 @@ async function boot() {
   const lines = [
     "Initialisiere Kernsysteme …",
     "Lade neuronale Sprachmodule (Edge TTS) …",
-    "Verbinde KI-Anbieter (Pollinations / Ollama) …",
-    "Aktiviere Plugins …",
+    "Verbinde Cloud-KI (Groq / Gemini – kostenlos) …",
+    "Verbinde MCP-Server & Plugins …",
     "Alle Systeme einsatzbereit.",
   ];
   const fill = $("#bootFill"), line = $("#bootLine");
@@ -87,7 +87,7 @@ async function pollSystem() {
     drawGauge("gDisk", d.disk_percent); $("#vDisk").textContent = d.disk_used_gb + "/" + d.disk_total_gb + " GB";
     const h = Math.floor(d.uptime_s / 3600), m = Math.floor((d.uptime_s % 3600) / 60);
     $("#vUptime").textContent = `${h} Std ${m} Min`;
-    $("#vPlatform").textContent = d.platform;
+    $("#vPlatform").textContent = d.platform + (d.cpu_temp_c ? ` · 🌡 ${d.cpu_temp_c}°C` : "");
   } catch {
     state.backend = false;
     $("#pillBackend").className = "pill warn"; $("#pillBackend").textContent = "● Demo (ohne Backend)";
@@ -188,8 +188,10 @@ async function loadCrypto() {
 
 /* ------------------------------------------------------------- Orb */
 const orb = $("#orb"), octx = orb.getContext("2d");
-let orbMode = "idle", orbT = 0;
+let orbMode = "idle", orbT = 0, orbFrame = 0;
 function drawOrb() {
+  orbFrame++;
+  if (state.pi && orbFrame % 2 === 1) { requestAnimationFrame(drawOrb); return; } // Pi: ~30 FPS sparen
   orbT += 0.02;
   const w = orb.width, h = orb.height, cx = w / 2, cy = h / 2;
   octx.clearRect(0, 0, w, h);
@@ -212,10 +214,11 @@ function drawOrb() {
   g.addColorStop(1, "rgba(0,80,160,.05)");
   octx.fillStyle = g;
   octx.beginPath(); octx.arc(cx, cy, 70 * pulse, 0, Math.PI * 2); octx.fill();
-  // Partikel
+  // Partikel (Pi: weniger)
+  const particles = state.pi ? 8 : 24;
   octx.fillStyle = "rgba(77,232,255,.8)";
-  for (let i = 0; i < 24; i++) {
-    const a = orbT * speed * 30 + (i / 24) * Math.PI * 2;
+  for (let i = 0; i < particles; i++) {
+    const a = orbT * speed * 30 + (i / particles) * Math.PI * 2;
     const r = 100 + Math.sin(orbT * 3 + i) * 8;
     octx.fillRect(cx + Math.cos(a) * r, cy + Math.sin(a) * r, 2.5, 2.5);
   }
@@ -227,11 +230,44 @@ function setOrb(mode, text) {
   $("#wave").classList.toggle("on", mode === "speak" || mode === "listen");
 }
 
+/* ------------------------------------------------- Backend / Pi / MCP */
+async function fetchHealth() {
+  try {
+    const r = await fetch(API + "/api/health");
+    if (!r.ok) throw new Error("no backend");
+    const d = await r.json();
+    state.backend = true;
+    if (d.pi_mode) {
+      state.pi = true;
+      state.systemMs = 7000; // Pi 3B+ schonen: seltener pollen
+      document.body.classList.add("pi");
+      const pill = $("#pillBackend");
+      if (pill) pill.title = "Raspberry Pi erkannt: " + (d.pi_model || d.machine || "");
+    }
+  } catch { /* Demo-Modus ohne Backend */ }
+}
+
+async function loadMcpPill() {
+  const pill = $("#pillMCP");
+  if (!pill) return;
+  if (!state.backend) { pill.textContent = "● MCP: Demo"; pill.className = "pill warn"; return; }
+  try {
+    const r = await fetch(API + "/api/mcp/status");
+    const d = await r.json();
+    if (!d.enabled) { pill.textContent = "● MCP: aus"; pill.className = "pill warn"; return; }
+    pill.textContent = `● MCP: ${d.tool_count} Tools`;
+    pill.className = d.tool_count ? "pill ok" : "pill warn";
+    pill.title = d.servers.map((s) => `${s.name}: ${s.enabled ? s.tools + " Tools" : "inaktiv"}`).join(" · ");
+  } catch { pill.textContent = "● MCP: ?"; pill.className = "pill warn"; }
+}
+
 /* ------------------------------------------------------------- Init */
 document.addEventListener("DOMContentLoaded", async () => {
   tickClock(); setInterval(tickClock, 1000);
+  await fetchHealth();
   drawOrb();
-  await pollSystem(); setInterval(pollSystem, 3000);
+  await pollSystem(); setInterval(pollSystem, state.systemMs);
+  loadMcpPill();
   loadWeather(); loadNews(); loadCrypto();
   $("#btnWeather").onclick = loadWeather;
   $("#btnCrypto").onclick = loadCrypto;

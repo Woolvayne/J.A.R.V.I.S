@@ -1,5 +1,10 @@
 # 🧩 J.A.R.V.I.S – Eigenes Plugin bauen
 
+> **Tipp:** Für externe Werkzeuge (Dateien, Zeit, Datenbanken, APIs …) brauchst
+> du oft gar kein eigenes Plugin: Jeder **MCP-Server** wird automatisch zum
+> KI-Werkzeug – siehe **MCP.md**. Plugins sind die richtige Wahl für eigene
+> UI-Fenster im Dashboard.
+
 Plugins leben in **`frontend/js/plugins.js`** in der Liste `PLUGINS`.
 Ein Plugin ist ein einziges Objekt – kein Build, kein Framework:
 

@@ -1,0 +1,22 @@
+# J.A.R.V.I.S systemd-Dienst (Raspberry Pi) – Vorlage, wird von install-pi.sh angepasst
+[Unit]
+Description=J.A.R.V.I.S Dashboard (Raspberry Pi)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__DIR__
+Environment=PI_MODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=__DIR__/.venv/bin/python -m uvicorn backend.server:app --host 0.0.0.0 --port 8000 --workers 1
+Restart=on-failure
+RestartSec=5
+# Pi 3B+ hat nur 1 GB RAM: freundliche Grenzen statt OOM-Killer-Chaos
+MemoryHigh=450M
+MemoryMax=600M
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

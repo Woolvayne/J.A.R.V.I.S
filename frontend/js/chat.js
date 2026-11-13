@@ -21,7 +21,7 @@ function escapeHtml(s) {
 
 function initChat() {
   const nPlugins = typeof PLUGINS !== "undefined" ? PLUGINS.length : 19;
-  addMsg("jarvis", `Guten Tag, Sir. Ich bin J.A.R.V.I.S – komplett kostenlos betrieben: Edge TTS für die Stimme, Pollinations oder Ollama für die KI, dazu ${nPlugins} Plugins. Sprechen Sie mich per 🎙 an oder schreiben Sie einen Befehl.`, "system");
+  addMsg("jarvis", `Guten Tag, Sir. Ich bin J.A.R.V.I.S – komplett kostenlos: Edge TTS für die Stimme, Groq/Gemini (Free Tier, ohne Download) für die KI, dazu ${nPlugins} Plugins und MCP-Support (🔌). Sprechen Sie mich per 🎙 an oder schreiben Sie einen Befehl.`, "system");
   $("#chatForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const v = $("#chatInput").value.trim();
@@ -63,7 +63,9 @@ async function handleUserText(text) {
       data = { text: (await r.text()).trim(), provider: "pollinations (direkt)" };
     }
     history.push({ role: "assistant", content: data.text });
-    addMsg("jarvis", data.text, data.provider);
+    const via = data.provider + (data.tools_used && data.tools_used.length ? " · 🔌 " + data.tools_used.join(", ") : "");
+    addMsg("jarvis", data.text, via);
+    if (data.tools_used && data.tools_used.length && typeof loadMcpPill === "function") loadMcpPill();
     $("#pillLLM").className = "pill ok"; $("#pillLLM").textContent = "● KI: " + data.provider;
     speak(data.text);
   } catch {
@@ -120,6 +122,7 @@ function runLocalCommand(raw) {
     bild: "image", witz: null, übersetz: "translate", übersetzen: "translate",
     github: "github", krypto: "crypto", nachrichten: "news", uhr: "worldclock",
     licht: "smart", smart: "smart", pomodoro: "pomodoro", stoppuhr: "stopwatch",
+    mcp: "mcp", connector: "mcp", werkzeuge: "mcp", tools: "mcp",
   };
   for (const [kw, id] of Object.entries(pluginCmds)) {
     if (t.includes(kw) && id) { openPlugin(id); return `Plugin „${kw}“ geöffnet, Sir.`; }
@@ -133,7 +136,7 @@ function runLocalCommand(raw) {
     return jokes[Math.floor(Math.random() * jokes.length)];
   }
   if (/was kannst|fähigkeiten|hilfe|befehle/.test(t)) {
-    return "Ich kann: Wetter anzeigen, Timer und Stoppuhr, rechnen, im Web suchen, Wikipedia, Nachrichten, Krypto-Kurse, GitHub, Bilder generieren, übersetzen, Dateien durchsuchen, Notizen und Todos, Pomodoro und Smart-Light-Demo. Oder stellen Sie mir eine beliebige Frage – die KI antwortet kostenlos über Pollinations oder lokal über Ollama.";
+    return "Ich kann: Wetter anzeigen, Timer und Stoppuhr, rechnen, im Web suchen, Wikipedia, Nachrichten, Krypto-Kurse, GitHub, Bilder generieren, übersetzen, Dateien durchsuchen, Notizen und Todos, Pomodoro und Smart-Light-Demo. Per MCP (🔌) kann ich zusätzlich beliebige externe Tools nutzen. Oder stellen Sie mir eine beliebige Frage – die KI antwortet kostenlos über Groq oder Gemini (Free Tier, ohne Download).";
   }
   if (/\b(hallo|hey|servus|moin)\b|guten tag/.test(t) || t === "hi") return "Guten Tag, Sir. Wie kann ich helfen?";
   if (/danke/.test(t)) return "Sehr gern, Sir.";
@@ -175,10 +178,20 @@ async function initSettings() {
       const r = await fetch(API + "/api/llm/status");
       const d = await r.json();
       $("#llmList").innerHTML = d.providers.map((p) =>
-        `<div>${p.available ? "✅" : "⚪"} ${p.name}${p.key_needed ? " (Key in .env)" : ""}</div>`).join("");
-      $("#pillLLM").textContent = "● KI: " + (d.providers.find((p) => p.available)?.name || "Demo");
+        `<div>${p.available ? "✅" : "⚪"} ${escapeHtml(p.name)}${p.recommended ? " – empfohlen" : ""}${p.key_needed ? " (Key in .env)" : ""}${p.model && p.model !== "-" ? ` · <span class="muted">${escapeHtml(p.model)}</span>` : ""}<br><small class="muted">${escapeHtml(p.note || "")}</small></div>`).join("");
+      const active = d.providers.find((p) => p.available);
+      $("#pillLLM").textContent = "● KI: " + (active ? active.id : "demo");
     } catch {
       $("#llmList").textContent = "Backend offline – Pollinations direkt + Demo-Modus aktiv.";
+    }
+    try {
+      const r = await fetch(API + "/api/mcp/status");
+      const d = await r.json();
+      $("#mcpList").innerHTML = d.servers.map((s) =>
+        `<div>${s.connected ? "✅" : s.enabled ? "❌" : "⚪"} ${escapeHtml(s.name)} (${escapeHtml(s.transport)}) – ${s.enabled ? s.tools + " Tools" : "inaktiv"}${s.error ? `<br><small class="muted">${escapeHtml(s.error)}</small>` : ""}</div>`).join("")
+        || '<span class="muted">Keine Server konfiguriert.</span>';
+    } catch {
+      $("#mcpList").textContent = "MCP-Status nicht erreichbar (Backend?).";
     }
   };
   $("#settingsClose").onclick = () => ($("#settingsModal").hidden = true);

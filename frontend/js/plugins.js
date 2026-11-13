@@ -10,6 +10,56 @@ const PLUGINS = [
   { id: "system", icon: "🖥", name: "System", desc: "CPU / RAM / Disk (Backend)",
     render(b) { b.innerHTML = `<p class="muted">Live-Werte links im System-Panel. Backend: <code>python backend/server.py</code></p>`; } },
 
+  { id: "mcp", icon: "🔌", name: "MCP", desc: "Model Context Protocol: beliebige MCP-Server-Tools für die KI",
+    render(b) {
+      b.innerHTML = `
+        <p class="muted">Verbinde <b>beliebige MCP-Server</b> in <code>mcp_servers.json</code> (<code>"enabled": true</code>).
+        Ihre Tools stehen der KI (Groq/Gemini) dann automatisch zur Verfügung. Anleitung: <code>MCP.md</code>.</p>
+        <div class="row"><button class="btn" id="mcpReload">↻ Neu laden / verbinden</button></div>
+        <div id="mcpServers"><p class="muted">Verbinde …</p></div>
+        <h4 style="margin:14px 0 6px">Tool testen</h4>
+        <div class="row"><select id="mcpToolSel" style="flex:1;background:#04101f;color:#fff;border:1px solid var(--line);border-radius:10px;padding:10px"><option value="">– Tool wählen –</option></select></div>
+        <div class="row"><textarea id="mcpArgs" rows="3" style="flex:1;background:#04101f;color:#fff;border:1px solid var(--line);border-radius:10px;padding:10px" placeholder='Argumente als JSON, z. B. {} oder {"city":"Berlin"}'></textarea></div>
+        <div class="row"><button class="btn" id="mcpCall">Tool ausführen</button></div>
+        <div class="result" id="mcpOut">Bereit. Oder frag einfach im Chat – z. B. „Wie spät ist es in Tokio?“ (mit aktivem Time-Server).</div>`;
+      const draw = async (reload) => {
+        $("#mcpServers").innerHTML = '<p class="muted">Verbinde …</p>';
+        try {
+          const r = await fetch(API + (reload ? "/api/mcp/reload" : "/api/mcp/status"), reload ? { method: "POST" } : {});
+          if (!r.ok) throw new Error("Backend?");
+          const d = await r.json();
+          $("#mcpServers").innerHTML =
+            `<div class="kv"><span>MCP aktiv</span><b>${d.enabled ? "ja" : "nein (MCP_ENABLED=0)"}</b></div>` +
+            d.servers.map((s) =>
+              `<div class="kv"><span>${s.connected ? "✅" : s.enabled ? "❌" : "⚪"} ${escapeHtml(s.name)} <small class="muted">(${escapeHtml(s.transport)}${s.error ? " – " + escapeHtml(s.error) : ""})</small></span><b>${s.enabled ? s.tools + " Tools" : "inaktiv"}</b></div>`).join("") +
+            `<p class="muted small">Gesamt: ${d.tool_count} Tools · Konfig: <code>${escapeHtml(d.config_file || "mcp_servers.json")}</code></p>`;
+          $("#mcpToolSel").innerHTML = '<option value="">– Tool wählen –</option>' +
+            d.tools.map((t) => `<option value="${escapeHtml(t.name)}" title="${escapeHtml(t.description)}">${escapeHtml(t.name)}</option>`).join("");
+          if (typeof loadMcpPill === "function") loadMcpPill();
+        } catch {
+          $("#mcpServers").innerHTML = '<p class="muted">MCP braucht das Backend (auf dem Pi läuft es als Dienst). Datei <code>mcp_servers.json</code> im Projektordner bearbeiten.</p>';
+        }
+      };
+      $("#mcpReload").onclick = () => draw(true);
+      $("#mcpCall").onclick = async () => {
+        const name = $("#mcpToolSel").value;
+        if (!name) { $("#mcpOut").textContent = "Bitte zuerst ein Tool wählen, Sir."; return; }
+        let args = {};
+        try { args = JSON.parse($("#mcpArgs").value.trim() || "{}"); }
+        catch { $("#mcpOut").textContent = "Argumente sind kein gültiges JSON."; return; }
+        $("#mcpOut").textContent = "Führe " + name + " aus …";
+        try {
+          const r = await fetch(API + "/api/mcp/call", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, arguments: args }),
+          });
+          const d = await r.json();
+          $("#mcpOut").textContent = d.result || JSON.stringify(d);
+        } catch { $("#mcpOut").textContent = "Aufruf fehlgeschlagen (Backend/Netzwerk)."; }
+      };
+      draw(false);
+    } },
+
   { id: "notes", icon: "📝", name: "Notizen", desc: "Schnellnotizen (lokal gespeichert)",
     render(b) {
       b.innerHTML = `<div class="row"><input id="noteIn" placeholder="Neue Notiz …"><button class="btn" id="noteAdd">Hinzufügen</button></div><div id="noteList"></div>`;

@@ -31,6 +31,7 @@
   <div class="top-status">
     <span class="pill" id="pillBackend" title="Backend">● Backend</span>
     <span class="pill" id="pillLLM" title="KI-Anbieter">● KI: …</span>
+    <span class="pill" id="pillMCP" title="MCP-Tools">● MCP: …</span>
     <span class="pill" id="pillTTS" title="Stimme">● Stimme</span>
     <button class="icon-btn" id="btnSettings" title="Einstellungen">⚙</button>
   </div>
@@ -145,14 +146,19 @@
           <option value="zuerich">Zürich</option>
         </select>
       </label>
-      <div class="field"><b>KI-Anbieter (alle kostenlos):</b><div id="llmList" class="muted">Prüfe …</div></div>
-      <p class="muted small">Ohne Keys läuft JARVIS über <b>Pollinations</b> (Cloud, kein Key) oder den <b>Demo-Modus</b>.
-      Für Offline-KI: <code>ollama pull llama3.1</code> installieren. Details in der README.</p>
+      <div class="field"><b>KI-Anbieter (alle kostenlos, ohne Download):</b><div id="llmList" class="muted">Prüfe …</div></div>
+      <p class="muted small">⭐ <b>Empfehlung für den Pi: Groq</b> – kostenlosen Key auf
+      <b>console.groq.com</b> holen (keine Kreditkarte) und in die <code>.env</code> eintragen.
+      Ohne Keys läuft JARVIS über <b>Pollinations</b> oder den <b>Demo-Modus</b>. Lokale KI (Ollama)
+      ist auf dem Pi 3B+ deaktiviert (zu wenig RAM).</p>
+      <div class="field"><b>MCP-Server (Model Context Protocol):</b><div id="mcpList" class="muted">Prüfe …</div></div>
+      <p class="muted small">Beliebige MCP-Server in <code>mcp_servers.json</code> aktivieren – ihre Tools
+      stehen dann der KI automatisch zur Verfügung. Details in <code>MCP.md</code>.</p>
     </div>
   </div>
 </div>
 
-<footer class="foot">J.A.R.V.I.S v1.0 · 100 % kostenlos · Edge TTS + Pollinations/Ollama · Keine kostenpflichtigen APIs</footer>
+<footer class="foot">J.A.R.V.I.S v1.1 · Raspberry Pi 3B+ optimiert · 100 % kostenlos · Groq/Gemini (Free) + Edge TTS + MCP · Keine kostenpflichtigen APIs</footer>
 
 <script src="/static/js/app.js"></script>
 <script src="/static/js/voice.js"></script>

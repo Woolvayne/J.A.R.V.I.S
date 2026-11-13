@@ -119,5 +119,12 @@ a{color:var(--cyan2)}
 img.gen{width:100%;border-radius:12px;border:1px solid var(--line)}
 .foot{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 22px}
 
+/* Raspberry-Pi-Sparmodus: weniger GPU/CPU-Last (kein Blur, keine Scanlines) */
+body.pi .card,body.pi .topbar{backdrop-filter:none}
+body.pi::before{display:none}
+body.pi .brand-mark{box-shadow:0 0 8px rgba(0,212,255,.5)}
+body.pi .clock,body.pi .boot-logo{text-shadow:0 0 8px rgba(0,212,255,.6)}
+body.pi .modal-box{box-shadow:none}
+
 @media (max-width:1100px){.layout{grid-template-columns:1fr 1fr}.col-center{grid-column:1/-1;order:-1}}
 @media (max-width:700px){.layout{grid-template-columns:1fr}.plugin-grid{grid-template-columns:repeat(4,1fr)}#orb{width:220px;height:220px}}

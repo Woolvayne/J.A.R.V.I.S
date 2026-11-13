@@ -27,7 +27,7 @@ const PLUGINS = [
             <li>Unten auf <b>„+ Composio-Vorlage“</b> tippen, URL einfügen und im Header-Feld
               <code>{"x-api-key": "ak_…"}</code> mit deinem Key ausfüllen → <b>„Speichern &amp; verbinden“</b>. Fertig – oben erscheint ✅ mit der Tool-Anzahl.</li>
           </ol>
-          <p class="muted small" style="padding:0 12px 10px">Alternative „Composio Connect“: URL <code>https://connect.composio.dev/mcp</code> mit Header <code>{"x-consumer-api-key": "ck_…"}</code> (anderer Key-Typ!).</p>
+          <p class="muted small" style="padding:0 12px 10px">Alternative „Composio Connect“: URL <code>https://connect.composio.dev/mcp</code> mit Header <code>{"x-consumer-api-key": "ck_…"}</code> (anderer Key-Typ!) – dafür unten einfach den Button <b>„+ Composio Connect“</b> nutzen und nur noch deinen <code>ck_…</code>-Key einsetzen.</p>
         </details>
         <details class="guide"><summary>➕ MCP-Server hinzufügen – so geht's generell</summary>
           <ol class="steps">
@@ -44,6 +44,7 @@ const PLUGINS = [
         <div id="mcpServers"><p class="muted">Verbinde …</p></div>
         <div class="row"><button class="btn" id="mcpReload">↻ Neu verbinden</button>
         <button class="btn ghost" id="mcpPresetComposio">+ Composio-Vorlage</button>
+        <button class="btn ghost" id="mcpPresetConnect">+ Composio Connect</button>
         <button class="btn ghost" id="mcpPresetCustom">+ Eigener Server</button></div>
         <div id="mcpEdit"></div>
         <h4 style="margin:14px 0 6px">Tool testen</h4>
@@ -119,6 +120,7 @@ const PLUGINS = [
 
       $("#mcpReload").onclick = () => draw(true);
       $("#mcpPresetComposio").onclick = () => editForm(null, { ...Mcp.presets.composio });
+      $("#mcpPresetConnect").onclick = () => editForm(null, { ...Mcp.presets.composioConnect });
       $("#mcpPresetCustom").onclick = () => editForm(null, { name: "", url: "https://", headers: {}, via: "proxy", enabled: true });
       $("#mcpCall").onclick = async () => {
         const name = $("#mcpToolSel").value;

@@ -27,7 +27,7 @@ const PLUGINS = [
             <li>Unten auf <b>„+ Composio-Vorlage“</b> tippen, URL einfügen und im Header-Feld
               <code>{"x-api-key": "ak_…"}</code> mit deinem Key ausfüllen → <b>„Speichern &amp; verbinden“</b>. Fertig – oben erscheint ✅ mit der Tool-Anzahl.</li>
           </ol>
-          <p class="muted small" style="padding:0 12px 10px">Alternative „Composio Connect“: URL <code>https://connect.composio.dev/mcp</code> mit Header <code>{"x-consumer-api-key": "ck_…"}</code> (anderer Key-Typ!) – dafür unten einfach den Button <b>„+ Composio Connect“</b> nutzen und nur noch deinen <code>ck_…</code>-Key einsetzen.</p>
+          <p class="muted small" style="padding:0 12px 10px">Alternative „Composio Connect“: URL <code>https://connect.composio.dev/mcp</code>, Header <code>{"x-consumer-api-key": "ck_…"}</code> (anderer Key-Typ!). <b>In diesem Deployment ist der Connect-Key bereits sicher in der Vercel-Env hinterlegt</b> – unten <b>„+ Composio Connect“</b> tippen, Header <code>{}</code> lassen und speichern; der Server wird beim Start sogar automatisch angelegt und der Proxy trägt den Key ein.</p>
         </details>
         <details class="guide"><summary>➕ MCP-Server hinzufügen – so geht's generell</summary>
           <ol class="steps">

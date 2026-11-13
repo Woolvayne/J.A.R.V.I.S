@@ -70,8 +70,8 @@
   <!-- MITTE -->
   <section class="col col-center">
     <div class="orb-wrap">
-      <canvas id="orb" width="320" height="320"></canvas>
-      <div class="orb-status" id="orbStatus">Bereit, Sir.</div>
+      <canvas id="orb" width="320" height="320" role="button" tabindex="0" title="Tippen, um zu sprechen (Mikrofon)" aria-label="Spracheingabe starten: Mikrofon"></canvas>
+      <div class="orb-status" id="orbStatus">Bereit, Sir. Tippe auf den Orb, um zu sprechen – oder schreib unten.</div>
       <div class="wave" id="wave"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
     </div>
 
@@ -86,8 +86,8 @@
     <div class="chat" id="chatLog" aria-live="polite"></div>
 
     <form class="inputbar" id="chatForm">
-      <button type="button" class="mic-btn" id="btnMic" title="Spracheingabe (Deutsch)">🎙</button>
-      <input id="chatInput" type="text" placeholder="Befehl oder Frage an JARVIS … (z. B. „Wetter in Hamburg“)" autocomplete="off">
+      <button type="button" class="mic-btn" id="btnMic" title="Spracheingabe (Deutsch)" aria-label="Spracheingabe starten">🎙</button>
+      <input id="chatInput" type="text" placeholder="Frage sprechen (Orb 🎙) oder hier tippen …" autocomplete="off" autocapitalize="sentences" enterkeyhint="send" aria-label="Frage an JARVIS eintippen">
       <button type="submit" class="send-btn">Senden</button>
     </form>
     <div class="hint">Tipp: 🎙 für Spracheingabe · Enter zum Senden · Alle Plugins unten sind auch per Sprache erreichbar.</div>

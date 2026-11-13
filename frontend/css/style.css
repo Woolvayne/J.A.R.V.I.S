@@ -70,7 +70,9 @@ input,select,textarea{font-size:16px} /* < 16 px würde Safari beim Tippen zoome
 
 /* Orb */
 .orb-wrap{text-align:center;padding:6px 0 2px}
-#orb{width:280px;height:280px;max-width:72vw;max-height:72vw}
+#orb{width:280px;height:280px;max-width:72vw;max-height:72vw;cursor:pointer;touch-action:manipulation;border-radius:50%}
+#orb:focus-visible{outline:2px solid var(--cyan);outline-offset:6px}
+button,.plugin,.icon-btn{touch-action:manipulation}
 .orb-status{color:var(--cyan2);letter-spacing:.12em;text-transform:uppercase;font-size:.82rem;margin-top:4px;min-height:1.2em}
 .wave{display:flex;gap:4px;justify-content:center;height:22px;align-items:center;margin-top:6px}
 .wave span{width:5px;height:6px;background:var(--cyan);border-radius:3px;opacity:.3;transition:height .15s}

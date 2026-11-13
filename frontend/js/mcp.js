@@ -35,10 +35,10 @@ const MCP_PRESETS = {
   composioConnect: {
     name: "composio-connect",
     url: "https://connect.composio.dev/mcp",
-    headers: { "x-consumer-api-key": "ck_DEIN_KEY" },
+    headers: {},
     via: "proxy",
     enabled: true,
-    hint: "Composio Connect Endpunkt; Key als x-consumer-api-key.",
+    hint: "Composio Connect: Ist der Key in der Vercel-Env hinterlegt (COMPOSIO_CONSUMER_KEY), Header einfach {} lassen – der Proxy trägt x-consumer-api-key serverseitig ein. Sonst hier {\"x-consumer-api-key\":\"ck_…\"} eintragen.",
   },
 };
 

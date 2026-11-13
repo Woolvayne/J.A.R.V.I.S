@@ -39,6 +39,18 @@ export default async function handler(req, res) {
     Accept: "application/json, text/event-stream",
     ...headers,
   };
+  // Composio Connect: Ist COMPOSIO_CONSUMER_KEY in der Vercel-Env gesetzt,
+  // wird der Key hier serverseitig als x-consumer-api-key eingetragen –
+  // der Browser braucht (und kennt) ihn dann gar nicht. Ein im Browser
+  // gespeicherter echter Key hat Vorrang; Platzhalter (…DEIN…) werden ersetzt.
+  if (target.hostname === "connect.composio.dev" && process.env.COMPOSIO_CONSUMER_KEY) {
+    const existingKey = Object.keys(fwdHeaders).find((k) => k.toLowerCase() === "x-consumer-api-key");
+    const existingVal = existingKey ? String(fwdHeaders[existingKey] || "") : "";
+    if (!existingKey || existingVal.includes("DEIN")) {
+      if (existingKey) delete fwdHeaders[existingKey];
+      fwdHeaders["x-consumer-api-key"] = process.env.COMPOSIO_CONSUMER_KEY;
+    }
+  }
   const session = req.headers["x-mcp-session-id"];
   if (session) fwdHeaders["Mcp-Session-Id"] = session;
 

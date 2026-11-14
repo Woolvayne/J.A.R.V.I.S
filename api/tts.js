@@ -1,33 +1,33 @@
-// J.A.R.V.I.S – Vercel Function: Voicebox-Proxy (Piper-TTS auf dem Pi).
-// Der Browser muss URL/Token der Pi-Voicebox dann nicht mehr kennen:
-// URL + Token liegen serverseitig in der Vercel-Env (VOICEBOX_URL /
-// VOICEBOX_TOKEN / optional VOICEBOX_VOICE), diese Funktion trägt den
-// Token-Header ein und reicht das WAV-Audio durch.
+// J.A.R.V.I.S – Vercel Function: Voicebox proxy (Piper TTS on the Pi).
+// The browser no longer needs the Pi voicebox's URL/token: both live
+// server-side in the Vercel env (VOICEBOX_URL / VOICEBOX_TOKEN / optional
+// VOICEBOX_VOICE); this function adds the token header and passes the WAV
+// audio through.
 // POST { text, voice? }  ->  audio/wav
-// Eine im Dashboard lokal eingetragene Voicebox (Einstellungen) hat im
-// Browser weiterhin Vorrang – dieser Proxy ist der zentrale Standard.
+// A voicebox entered locally in Settings still takes precedence in the
+// browser – this proxy is the central default.
 
 export default async function handler(req, res) {
   if (req.method === "GET") return diagnose(res);
-  if (req.method !== "POST") return res.status(405).json({ error: "Nur POST" });
+  if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
   const body = typeof req.body === "string" ? safeJson(req.body) : (req.body || {});
   const text = String(body.text || "").trim().slice(0, 1200);
-  if (!text) return res.status(400).json({ error: "text fehlt" });
+  if (!text) return res.status(400).json({ error: "text missing" });
 
   const base = String(process.env.VOICEBOX_URL || "").replace(/\/+$/, "");
   if (!base) {
     return res.status(501).json({
-      error: "VOICEBOX_URL ist in der Vercel-Env nicht gesetzt (Pi-Voicebox zentral eintragen oder lokal in den Einstellungen).",
+      error: "VOICEBOX_URL is not set in the Vercel env (set the Pi voicebox centrally or locally in Settings).",
     });
   }
   let target;
-  try { target = new URL(base + "/tts"); } catch { return res.status(500).json({ error: "VOICEBOX_URL ungültig" }); }
+  try { target = new URL(base + "/tts"); } catch { return res.status(500).json({ error: "VOICEBOX_URL invalid" }); }
   if (target.protocol !== "https:" && target.hostname !== "localhost" && target.hostname !== "127.0.0.1") {
-    return res.status(500).json({ error: "VOICEBOX_URL muss https sein" });
+    return res.status(500).json({ error: "VOICEBOX_URL must be https" });
   }
 
-  const wanted = String(body.voice || process.env.VOICEBOX_VOICE || "de_DE-thorsten-medium").trim();
-  const voice = /^[A-Za-z0-9._-]+$/.test(wanted) ? wanted : "de_DE-thorsten-medium";
+  const wanted = String(body.voice || process.env.VOICEBOX_VOICE || "en_GB-alan-medium").trim();
+  const voice = /^[A-Za-z0-9._-]+$/.test(wanted) ? wanted : "en_GB-alan-medium";
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 28000);
@@ -52,20 +52,20 @@ export default async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
     return res.send(buf);
   } catch (e) {
-    return res.status(502).json({ error: "Voicebox nicht erreichbar: " + String((e && e.message) || e) });
+    return res.status(502).json({ error: "Voicebox unreachable: " + String((e && e.message) || e) });
   } finally {
     clearTimeout(timer);
   }
 }
 
-// GET /api/tts = Selbsttest (ohne Audio-Ausgabe im Browser):
-// Prüft von Vercel aus: Pi per Tunnel erreichbar? Token wird akzeptiert?
-// So sieht man im JARVIS-Status sofort, ob es am Pi-Dienst, am Token
-// oder erst an der iOS-Wiedergabe hakt. Token/URL werden nie ausgegeben.
+// GET /api/tts = self-test (no audio playback in the browser):
+// Checks from Vercel: is the Pi reachable via the tunnel? Is the token
+// accepted? That way you can see at a glance whether a failure is the Pi
+// service, the token or only iOS playback. Token/URL are never printed.
 async function diagnose(res) {
   const base = String(process.env.VOICEBOX_URL || "").replace(/\/+$/, "");
-  if (!base) return res.status(200).json({ ok: false, configured: false, error: "VOICEBOX_URL nicht gesetzt" });
-  const voice = process.env.VOICEBOX_VOICE || "de_DE-thorsten-medium";
+  if (!base) return res.status(200).json({ ok: false, configured: false, error: "VOICEBOX_URL not set" });
+  const voice = process.env.VOICEBOX_VOICE || "en_GB-alan-medium";
   const out = { ok: false, configured: true, voice, upstream_reachable: false, token_accepted: false };
   try {
     const h = await fetch(base + "/health", { signal: timeoutSignal(10000) });

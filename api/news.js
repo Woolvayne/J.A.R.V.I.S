@@ -1,9 +1,9 @@
-// J.A.R.V.I.S – Vercel Function: RSS-Proxy (Browser können RSS meist nicht direkt lesen)
+// J.A.R.V.I.S – Vercel Function: RSS proxy (browsers usually cannot read RSS directly)
 const FEEDS = {
-  tagesschau: "https://www.tagesschau.de/xml/rss_2_0",
   bbc: "https://feeds.bbci.co.uk/news/rss.xml",
-  heise: "https://www.heise.de/rss/heise.rdf",
-  spiegel: "https://www.spiegel.de/schlagzeilen/tops/index.rss",
+  guardian: "https://www.theguardian.com/world/rss",
+  npr: "https://feeds.npr.org/1001/rss.xml",
+  sky: "https://feeds.skynews.com/feeds/rss/home.xml",
 };
 
 function unCdata(s) {
@@ -19,10 +19,10 @@ function tag(block, name) {
 }
 
 export default async function handler(req, res) {
-  const feed = String((req.query && req.query.feed) || "tagesschau");
-  const url = FEEDS[feed] || FEEDS.tagesschau;
+  const feed = String((req.query && req.query.feed) || "bbc");
+  const url = FEEDS[feed] || FEEDS.bbc;
   try {
-    const r = await fetch(url, { headers: { "User-Agent": "JARVIS/2.0 (Vercel)" } });
+    const r = await fetch(url, { headers: { "User-Agent": "JARVIS/3.0 (Vercel)" } });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const xml = await r.text();
     const blocks = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
@@ -34,6 +34,6 @@ export default async function handler(req, res) {
     res.setHeader("Cache-Control", "s-maxage=600, stale-while-revalidate=120");
     return res.status(200).json({ feed, items });
   } catch (e) {
-    return res.status(502).json({ error: "News-Feed nicht erreichbar: " + String(e && e.message || e) });
+    return res.status(502).json({ error: "News feed unreachable: " + String(e && e.message || e) });
   }
 }

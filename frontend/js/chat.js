@@ -1,23 +1,18 @@
-/* J.A.R.V.I.S – Chat ohne Backend: Befehls-Parser (offline) + Browser-KI.
- * KI-Reihenfolge (Einstellungen, Standard groq,ollama,pollinations):
- *   groq         – eigener Key im Browser (localStorage) ODER Vercel-Env (/api/chat)
- *   ollama       – lokales Mini-Modell (http://localhost:11434), inkl. MCP-Tools
- *   pollinations – keylos direkt aus dem Browser (keine Tools)
- *   demo         – regelbasiert offline
- * MCP-Tools (mcp.js) werden Groq & Ollama per Function-Calling gegeben;
- * der Tool-Loop (Modell -> tools/call -> Ergebnis -> Antwort) läuft hier. */
-/* Hinweis: $ , API, CITIES, state, Mcp werden in app.js/mcp.js definiert. */
+/* J.A.R.V.I.S – Chat: small deterministic commands (UI actions) + Groq.
+ * AI policy: Groq ONLY. No local model, no keyless fallback, no demo
+ * answers. Route: the server key in the Vercel env (/api/chat) first,
+ * your own browser key second. MCP tools (mcp.js) are handed to Groq
+ * via function calling; the tool loop runs here in the browser. */
+/* Note: $, API, CITIES, state, Mcp are defined in app.js/mcp.js. */
 
-const history = [
-  { role: "system", content: "Du bist J.A.R.V.I.S, ein höflicher KI-Assistent. Antworte kurz auf Deutsch." },
-];
-const SYS_PROMPT = "Du bist J.A.R.V.I.S (Just A Rather Very Intelligent System), ein höflicher, präziser KI-Assistent. Antworte auf Deutsch, kurz und klar, maximal 3-4 Sätze. Sprich den Nutzer mit 'Sir' an, wenn es passt. Keine Markdown-Tabellen, keine Emojis. Wenn dir Tools zur Verfügung stehen, nutze sie für aktuelle/faktische Informationen, statt zu raten.";
+const history = [];
+const SYS_PROMPT = "You are J.A.R.V.I.S (Just A Rather Very Intelligent System), a polite, precise British AI butler. Always answer in British English, briefly and clearly, in at most 3-4 sentences. Address the user as 'Sir' where fitting. No emojis, no markdown tables. If tools are available, use them for current or factual information instead of guessing.";
 
 function addMsg(who, text, provider) {
   const log = $("#chatLog");
   const div = document.createElement("div");
   div.className = "msg " + (who === "user" ? "user" : "jarvis");
-  div.innerHTML = `<span class="who">${who === "user" ? "Sie" : "J.A.R.V.I.S"}</span>${escapeHtml(text)}` +
+  div.innerHTML = `<span class="who">${who === "user" ? "You" : "J.A.R.V.I.S"}</span>${escapeHtml(text)}` +
     (provider ? `<span class="prov">via ${escapeHtml(provider)}</span>` : "");
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
@@ -29,7 +24,7 @@ function escapeHtml(s) {
 
 function initChat() {
   const nPlugins = typeof PLUGINS !== "undefined" ? PLUGINS.length : 20;
-  addMsg("jarvis", `Guten Tag, Sir. Ich bin J.A.R.V.I.S – jetzt komplett ohne eigenes Backend (Vercel): Browser-Stimme, Groq oder lokales Ollama als KI, dazu ${nPlugins} Plugins und echte MCP-Server (🔌, z. B. Composio). Sprechen Sie mich per 🎙 an oder schreiben Sie einen Befehl.`, "system");
+  addMsg("jarvis", `Good day, Sir. I am J.A.R.V.I.S – running entirely on Vercel: Groq is my only AI, my voice is the British Pi voice, and ${nPlugins} plugins plus real MCP servers (for example Composio) are at your disposal. Tap the orb to speak, or type a command below.`, "system");
   $("#chatForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const v = $("#chatInput").value.trim();
@@ -43,37 +38,40 @@ async function handleUserText(text) {
   addMsg("user", text);
   history.push({ role: "user", content: text });
 
-  // 1) Lokale Befehle (offline, sofort)
+  // 1) Deterministic UI commands (timer, weather panel, calculator …).
+  //    These are interface actions, not AI – every real answer is Groq.
   const local = runLocalCommand(text);
   if (local !== null) {
     history.push({ role: "assistant", content: local });
-    addMsg("jarvis", local, "lokaler Befehl");
+    addMsg("jarvis", local, "command");
     speak(local);
     return;
   }
 
-  // 2) KI im Browser (Groq/Ollama/Pollinations/Demo) inkl. MCP-Tool-Loop
-  setOrb("speak", "Denke nach …");
+  // 2) Groq (with MCP tool loop)
+  setOrb("speak", "Thinking …");
   try {
     const data = await llmReply();
     history.push({ role: "assistant", content: data.text });
-    const via = data.provider + (data.tools_used && data.tools_used.length ? " · 🔌 " + data.tools_used.join(", ") : "");
+    const via = data.provider + (data.tools_used && data.tools_used.length ? " · tools: " + data.tools_used.join(", ") : "");
     addMsg("jarvis", data.text, via);
     if (data.tools_used && data.tools_used.length) loadMcpPill();
-    $("#pillLLM").className = "pill ok"; $("#pillLLM").textContent = "● KI: " + data.provider;
+    $("#pillLLM").className = "pill ok"; $("#pillLLM").textContent = "● AI: Groq";
     speak(data.text);
-  } catch {
-    const fallback = "Entschuldigung, Sir – die KI ist gerade nicht erreichbar. Lokale Befehle und Plugins funktionieren weiterhin. Tipp: Groq-Key in den ⚙ Einstellungen eintragen (kostenlos) oder Ollama lokal starten.";
-    addMsg("jarvis", fallback, "offline");
+  } catch (e) {
+    const reason = String((e && e.message) || e || "unknown error");
+    const fallback = "Apologies, Sir – Groq is currently unreachable (" + reason + "). There is deliberately no local fallback, so I would rather tell you than guess. Please check your connection and try again in a moment.";
+    addMsg("jarvis", fallback, "Groq unavailable");
+    $("#pillLLM").className = "pill warn"; $("#pillLLM").textContent = "● AI: Groq unreachable";
     speak(fallback);
   } finally {
-    setOrb("idle", "Bereit, Sir.");
+    setOrb("idle", "Ready, Sir.");
   }
 }
 
-/* ------------------------------------------------------- KI-Engine (Browser) */
+/* ------------------------------------------------------- Groq (only) */
 function chatMessages() {
-  return [{ role: "system", content: SYS_PROMPT }, ...history.filter((h) => h.role !== "system").slice(-8)];
+  return [{ role: "system", content: SYS_PROMPT }, ...history.slice(-8)];
 }
 
 async function getMcpTools() {
@@ -81,60 +79,53 @@ async function getMcpTools() {
   catch { return []; }
 }
 
-async function groqOnce(msgs, tools) {
+function groqPayload(msgs, tools) {
   const payload = { model: "llama-3.3-70b-versatile", messages: msgs, max_tokens: 700, temperature: 0.7 };
   if (tools && tools.length) { payload.tools = tools; payload.tool_choice = "auto"; }
-  if (state.groqKey) {
-    // Direkt zu Groq mit eigenem Key (bleibt nur in diesem Browser)
-    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: "Bearer " + state.groqKey, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!r.ok) throw new Error("Groq HTTP " + r.status);
-    return (await r.json()).choices[0].message;
-  }
-  if (state.functions) {
-    // Über Vercel-Function (Key liegt serverseitig in der Env)
-    const r = await fetch("/api/chat", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: msgs, provider: "groq", tools }),
-    });
-    if (!r.ok) throw new Error("Vercel-Proxy HTTP " + r.status);
-    return (await r.json()).choices[0].message;
-  }
-  throw new Error("Kein Groq-Key: in ⚙ Einstellungen eintragen oder GROQ_API_KEY in Vercel setzen");
+  return payload;
 }
 
-function timeoutSignal(ms) {
-  // AbortSignal.timeout gibt es erst in neueren Browsern – Fallback ohne Signal
-  try { return typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined; }
-  catch { return undefined; }
-}
-
-async function ollamaAvailable(force) {
-  if (!force && state.ollamaOk !== null && Date.now() - state.ollamaOkAt < 30000) return state.ollamaOk;
-  try {
-    const r = await fetch(state.ollamaUrl + "/api/tags", { signal: timeoutSignal(2500) });
-    state.ollamaOk = r.ok;
-  } catch { state.ollamaOk = false; }
-  state.ollamaOkAt = Date.now();
-  return state.ollamaOk;
-}
-
-async function ollamaOnce(msgs, tools) {
-  const payload = { model: state.ollamaModel, messages: msgs, stream: false };
-  if (tools && tools.length) payload.tools = tools;
-  const r = await fetch(state.ollamaUrl + "/api/chat", {
+async function groqViaServer(msgs, tools) {
+  const r = await fetch("/api/chat", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload), signal: timeoutSignal(120000),
+    body: JSON.stringify({ messages: msgs, provider: "groq", tools }),
   });
-  if (!r.ok) throw new Error("Ollama HTTP " + r.status);
-  return (await r.json()).message || {};
+  if (!r.ok) {
+    let detail = "";
+    try { detail = (await r.json()).error || ""; } catch { /* ignore */ }
+    throw new Error("Vercel proxy HTTP " + r.status + (detail ? ": " + detail : ""));
+  }
+  return (await r.json()).choices[0].message;
 }
 
-/* Generischer Tool-Loop: Modell darf MCP-Tools aufrufen (max. 3 Runden) */
-async function toolLoop(callOnce, msgs, tools, isOllama) {
+async function groqDirect(msgs, tools) {
+  const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + state.groqKey, "Content-Type": "application/json" },
+    body: JSON.stringify(groqPayload(msgs, tools)),
+  });
+  if (!r.ok) throw new Error("Groq HTTP " + r.status);
+  return (await r.json()).choices[0].message;
+}
+
+let lastGroqRoute = "Groq";
+async function groqOnce(msgs, tools) {
+  const errors = [];
+  // 1) Server key in the Vercel env (preferred – nothing to type anywhere)
+  if (state.functions) {
+    try { const m = await groqViaServer(msgs, tools); lastGroqRoute = "Groq (Vercel)"; return m; }
+    catch (e) { errors.push(String(e.message || e)); }
+  }
+  // 2) Your own key in this browser (fallback)
+  if (state.groqKey) {
+    try { const m = await groqDirect(msgs, tools); lastGroqRoute = "Groq (your key)"; return m; }
+    catch (e) { errors.push(String(e.message || e)); }
+  }
+  throw new Error(errors.filter(Boolean).join(" | ") || "No Groq key: set GROQ_API_KEY in Vercel or add your key in Settings");
+}
+
+/* Generic tool loop: the model may call MCP tools (max. 3 rounds) */
+async function toolLoop(callOnce, msgs, tools) {
   const used = [];
   const m = [...msgs];
   for (let round = 0; round < 4; round++) {
@@ -148,125 +139,98 @@ async function toolLoop(callOnce, msgs, tools, isOllama) {
       if (typeof args === "string") { try { args = JSON.parse(args || "{}"); } catch { args = {}; } }
       const result = await Mcp.callTool(fn.name, args);
       used.push(fn.name);
-      if (isOllama) m.push({ role: "tool", content: String(result).slice(0, 6000) });
-      else m.push({ role: "tool", tool_call_id: tc.id || fn.name, content: String(result).slice(0, 6000) });
+      m.push({ role: "tool", tool_call_id: tc.id || fn.name, content: String(result).slice(0, 6000) });
     }
   }
-  return { text: "Die Tool-Aufrufe haben zu viele Runden benötigt, Sir.", tools_used: used };
+  return { text: "The tool calls needed too many rounds, Sir.", tools_used: used };
 }
 
 async function llmReply() {
   const tools = await getMcpTools();
-  const order = state.llmOrder.split(",").map((s) => s.trim()).filter(Boolean);
-  for (const pid of order) {
-    try {
-      if (pid === "groq") {
-        const out = await toolLoop(groqOnce, chatMessages(), tools, false);
-        if (out.text) return { ...out, provider: state.groqKey ? "groq" : "groq (Vercel)" };
-      } else if (pid === "ollama") {
-        if (!(await ollamaAvailable(false))) throw new Error("Ollama nicht erreichbar");
-        const out = await toolLoop(ollamaOnce, chatMessages(), tools, true);
-        if (out.text) return { ...out, provider: "ollama lokal" };
-      } else if (pid === "pollinations") {
-        const prompt = encodeURIComponent(chatMessages().slice(-6).map((m) => m.role + ": " + m.content).join("\n"));
-        const r = await fetch(`https://text.pollinations.ai/${prompt}?model=openai`);
-        if (!r.ok) throw new Error("pollinations fail");
-        const text = (await r.text()).trim();
-        if (text) return { text, provider: "pollinations", tools_used: [] };
-      }
-    } catch { /* nächster Anbieter */ }
-  }
-  return { text: demoReply(), provider: "demo", tools_used: [] };
+  const out = await toolLoop(groqOnce, chatMessages(), tools);
+  if (!out.text) throw new Error("Groq returned an empty answer");
+  return { ...out, provider: lastGroqRoute };
 }
 
-function demoReply() {
-  const last = (history[history.length - 1]?.content || "").toLowerCase();
-  if (/witz|lustig/.test(last)) return "Warum mögen Programmierer den Dunkelmodus? Weil Licht Bugs anzieht.";
-  if (/wer bist|was bist/.test(last)) return "Ich bin J.A.R.V.I.S – jetzt als reines Vercel-Dashboard ohne eigenes Backend, mit MCP-Anbindung (z. B. Composio) und optional lokalem Ollama.";
-  if (/mcp|composio|tool/.test(last)) return "Meine MCP-Server verwaltest du im 🔌 MCP-Plugin: Composio-URL eintragen, verbinden, fertig. Die KI nutzt die Tools dann automatisch.";
-  if (/hilfe|was kannst/.test(last)) return "Frag mich etwas oder nutze Befehle wie 'Wetter in Berlin', 'Timer 5 Minuten', 'Rechne 12*8'. Für echte KI: Groq-Key in den Einstellungen (kostenlos) – MCP-Tools (Composio & Co.) inklusive.";
-  return "Verstanden, Sir. (Demo-Modus – für echte KI-Antworten kostenlosen Groq-Key in den ⚙ Einstellungen eintragen oder Ollama lokal starten.)";
+function timeoutSignal(ms) {
+  // AbortSignal.timeout only exists in newer browsers – fallback without signal
+  try { return typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined; }
+  catch { return undefined; }
 }
 
-/* ------------------------------------------------ Lokale Befehle (DE) */
+/* ------------------------------------------------ Local commands (EN) */
 function runLocalCommand(raw) {
   const t = raw.toLowerCase().trim();
 
-  let m = t.match(/wetter(?:\s+in\s+(\w+))?/);
+  let m = t.match(/weather(?:\s+in\s+([a-zäöüß-]+))?/);
   if (m) {
     const cityKey = Object.keys(CITIES).find((k) => CITIES[k].name.toLowerCase() === (m[1] || ""));
     if (cityKey) { state.city = cityKey; localStorage.setItem("jarvis_city", cityKey); }
     loadWeather();
-    return `Wetter für ${CITIES[state.city].name} wird geladen, Sir. Details stehen links im Dashboard.`;
+    return `Loading the weather for ${CITIES[state.city].name}, Sir. The details are on the left of the dashboard.`;
   }
-  m = t.match(/timer\s+(\d+)\s*(sekunde|minute|minuten|stunden)?/);
+  m = t.match(/timer\s+(\d+)\s*(second|seconds|minute|minutes|hour|hours)?/);
   if (m) {
     const n = parseInt(m[1], 10);
-    const unit = m[2] || "minute";
-    const sec = unit.startsWith("sek") ? n : unit.startsWith("std") || unit.startsWith("stunde") ? n * 3600 : n * 60;
+    const unit = m[2] || "minutes";
+    const sec = unit.startsWith("second") ? n : unit.startsWith("hour") ? n * 3600 : n * 60;
     openPlugin("timer", { seconds: sec });
-    return `Timer auf ${n} ${unit} gesetzt, Sir.`;
+    return `Timer set to ${n} ${unit}, Sir.`;
   }
-  m = t.match(/(?:rechne|berechne)\s+([\d\s+\-*/().]+)/) || t.match(/^([\d\s+\-*/().]+)$/);
+  m = t.match(/(?:calculate|compute|what is)\s+([\d\s+\-*/().]+)/) || t.match(/^([\d\s+\-*/().]+)$/);
   if (m && /[+\-*/]/.test(m[1])) {
     try {
       const expr = m[1].replace(/,/g, ".").replace(/[^0-9+\-*/(). ]/g, "");
       const val = Function('"use strict";return (' + expr + ")")();
-      if (typeof val === "number" && isFinite(val)) return `Das Ergebnis lautet ${Math.round(val * 100) / 100}, Sir.`;
-    } catch { /* weiter zur KI */ }
+      if (typeof val === "number" && isFinite(val)) return `The result is ${Math.round(val * 100) / 100}, Sir.`;
+    } catch { /* fall through to Groq */ }
   }
-  if (/wie spät|uhrzeit/.test(t)) {
-    return `Es ist ${new Date().toLocaleTimeString("de-DE")} Uhr, Sir.`;
+  if (/what time|the time|clock/.test(t) && t.length < 40) {
+    return `It is ${new Date().toLocaleTimeString("en-GB")}, Sir.`;
   }
-  m = t.match(/(?:suche|such|google)\s+(?:nach\s+)?(.+)/);
-  if (m) { openPlugin("search", { q: m[1] }); return `Ich suche nach „${m[1]}“, Sir.`; }
+  m = t.match(/(?:search|google)(?:\s+for)?\s+(.+)/);
+  if (m) { openPlugin("search", { q: m[1] }); return `Searching for "${m[1]}", Sir.`; }
   const pluginCmds = {
-    notiz: "notes", notizen: "notes", todo: "todo", aufgaben: "todo",
-    rechner: "calc", taschenrechner: "calc", datei: "files", dateien: "files",
-    bild: "image", witz: null, übersetz: "translate", übersetzen: "translate",
-    github: "github", krypto: "crypto", nachrichten: "news", uhr: "worldclock",
-    licht: "smart", smart: "smart", pomodoro: "pomodoro", stoppuhr: "stopwatch",
-    mcp: "mcp", composio: "mcp", connector: "mcp", werkzeuge: "mcp", tools: "mcp",
-    gmail: "mcp", mail: "mcp", mails: "mcp",
+    note: "notes", notes: "notes", todo: "todo", task: "todo", tasks: "todo",
+    calculator: "calc",
+    image: "image", picture: "image", translate: "translate",
+    github: "github", crypto: "crypto", bitcoin: "crypto", news: "news",
+    "world clock": "worldclock", light: "smart", lights: "smart", smart: "smart",
+    pomodoro: "pomodoro", stopwatch: "stopwatch",
+    mcp: "mcp", composio: "mcp", connector: "mcp", tools: "mcp",
+    gmail: "mcp", mail: "mcp", email: "mcp", emails: "mcp",
   };
   for (const [kw, id] of Object.entries(pluginCmds)) {
-    if (t.includes(kw) && id) { openPlugin(id); return `Plugin „${kw}“ geöffnet, Sir.`; }
+    if (t.includes(kw) && id) { openPlugin(id); return `The ${kw} plugin is open, Sir.`; }
   }
-  if (/witz|lustig/.test(t)) {
+  if (/joke|funny/.test(t)) {
     const jokes = [
-      "Warum mögen Programmierer den Dunkelmodus? Weil Licht Bugs anzieht.",
-      "Es gibt nur 10 Arten von Menschen: die, die Binär verstehen, und die, die es nicht tun.",
-      "Ein SQL-Query geht in eine Bar, sieht zwei Tabellen und fragt: „Darf ich mich joinen?“",
+      "Why do programmers prefer dark mode? Because light attracts bugs.",
+      "There are only 10 types of people: those who understand binary, and those who do not.",
+      "A SQL query walks into a bar, sees two tables and asks: may I join you?",
     ];
     return jokes[Math.floor(Math.random() * jokes.length)];
   }
-  if (/was kannst|fähigkeiten|hilfe|befehle/.test(t)) {
-    return "Ich kann: Wetter, Timer/Stoppuhr/Pomodoro, rechnen, Websuche, Wikipedia, Nachrichten, Krypto, GitHub, Bilder, übersetzen, Notizen/Todos. Per MCP (🔌, z. B. Composio) kommen echte Tools dazu – Gmail, Drive, Sheets u. v. m. Die KI (Groq gratis oder Ollama lokal) nutzt sie automatisch.";
+  if (/what can you do|abilities|help|commands/.test(t)) {
+    return "I can show weather, run timers, a stopwatch and pomodoro, calculate, search the web, read Wikipedia and the news, track crypto, query GitHub, generate images, translate, and keep notes and tasks. Via MCP (for example Composio) real tools join in – Gmail, Drive, Sheets and more. Every answer comes from Groq, my voice from the Pi.";
   }
-  if (/\b(hallo|hey|servus|moin)\b|guten tag/.test(t) || t === "hi") return "Guten Tag, Sir. Wie kann ich helfen?";
-  if (/danke/.test(t)) return "Sehr gern, Sir.";
-  if (/status|system/.test(t)) return "Alle Systeme nominal, Sir. Links siehst du Geräte-Infos, Wetter und Weltuhr.";
+  if (/\b(hello|hey|good morning|good afternoon|good evening)\b/.test(t) || t === "hi") return "Good day, Sir. How may I help?";
+  if (/thank/.test(t)) return "You are most welcome, Sir.";
+  if (/status|system/.test(t) && t.length < 40) return "All systems nominal, Sir. Device information, weather and the world clock are on the left.";
 
-  return null; // -> KI
+  return null; // -> Groq
 }
 
-/* ------------------------------------------------ Einstellungen */
+/* ------------------------------------------------ Settings */
 function fillVoiceOptions() {
   const sel = $("#setVoice");
   if (!sel) return;
-  if (state.backendUrl) {
-    // Edge-TTS-Stimmen des optionalen Pi-Backends
-    fetch(state.backendUrl + "/api/voices").then((r) => r.json()).then((d) => {
-      sel.innerHTML = d.voices.map((v) => `<option value="${v.id}">${v.label} (Edge TTS)</option>`).join("");
-      sel.value = state.voice || d.default;
-    }).catch(() => { sel.innerHTML = '<option value="de-DE-ConradNeural">Conrad (Edge TTS)</option>'; });
-    return;
-  }
   const voices = browserVoices();
-  const de = voices.filter((v) => v.lang && v.lang.toLowerCase().startsWith("de"));
-  const rest = voices.filter((v) => !(v.lang && v.lang.toLowerCase().startsWith("de")));
-  const list = [...de, ...rest];
-  sel.innerHTML = '<option value="">Automatisch (Deutsch)</option>' +
+  const gb = voices.filter((v) => v.lang && v.lang.toLowerCase().replace("_", "-").startsWith("en-gb"));
+  const en = voices.filter((v) => v.lang && v.lang.toLowerCase().startsWith("en") && !gb.includes(v));
+  const rest = voices.filter((v) => !gb.includes(v) && !en.includes(v));
+  const list = [...gb, ...en, ...rest];
+  sel.innerHTML = '<option value="">Automatic (British English)</option>' +
     list.map((v) => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`).join("");
   sel.value = state.voice;
 }
@@ -279,53 +243,42 @@ async function initSettings() {
   $("#setAutoSpeak").checked = state.autoSpeak;
   $("#setCity").value = state.city;
   $("#setGroqKey").value = state.groqKey;
-  $("#setLlmOrder").value = state.llmOrder;
-  $("#setOllamaUrl").value = state.ollamaUrl;
-  $("#setOllamaModel").value = state.ollamaModel;
-  $("#setBackendUrl").value = state.backendUrl;
   $("#setTtsUrl").value = state.ttsUrl;
   $("#setTtsToken").value = state.ttsToken;
   $("#setTtsVoice").value = state.ttsVoice;
   if (state.ttsServer && !state.ttsUrl) {
-    ttsLog("Voicebox ist zentral in Vercel eingetragen – nichts mehr einzutippen, „🔊 Stimme testen“ genügt.");
+    ttsLog("Voicebox is configured centrally in Vercel – nothing to type. Just press 'Test voice'.");
   }
   $("#setPiMode").checked = state.pi;
   $("#btnTtsTest").onclick = () => testVoice();
 
-  sel.onchange = () => { state.voice = sel.value; localStorage.setItem("jarvis_voice", sel.value); speak("Stimme geändert, Sir."); };
-  $("#setTtsOn").onchange = (e) => { state.ttsOn = e.target.checked; localStorage.setItem("jarvis_tts", e.target.checked ? "1" : "0"); };
+  sel.onchange = () => { state.voice = sel.value; localStorage.setItem("jarvis_voice", sel.value); speak("Voice changed, Sir."); };
+  $("#setTtsOn").onchange = (e) => { state.ttsOn = e.target.checked; localStorage.setItem("jarvis_tts", e.target.checked ? "1" : "0"); if (typeof voicePill === "function") voicePill(!state.ttsOn ? "off" : (state.ttsUrl || state.ttsServer) ? "pi" : "browser"); };
   $("#setAutoSpeak").onchange = (e) => { state.autoSpeak = e.target.checked; localStorage.setItem("jarvis_auto", e.target.checked ? "1" : "0"); };
   $("#setCity").onchange = (e) => { state.city = e.target.value; localStorage.setItem("jarvis_city", e.target.value); loadWeather(); };
   $("#setGroqKey").onchange = (e) => { state.groqKey = e.target.value.trim(); localStorage.setItem("jarvis_groq_key", state.groqKey); };
-  $("#setLlmOrder").onchange = (e) => { state.llmOrder = e.target.value; localStorage.setItem("jarvis_llm_order", state.llmOrder); };
-  $("#setOllamaUrl").onchange = (e) => { state.ollamaUrl = e.target.value.trim().replace(/\/$/, "") || "http://localhost:11434"; localStorage.setItem("jarvis_ollama_url", state.ollamaUrl); state.ollamaOk = null; };
-  $("#setOllamaModel").onchange = (e) => { state.ollamaModel = e.target.value.trim() || "qwen2.5:0.5b"; localStorage.setItem("jarvis_ollama_model", state.ollamaModel); };
-  $("#setBackendUrl").onchange = (e) => { state.backendUrl = e.target.value.trim().replace(/\/$/, ""); localStorage.setItem("jarvis_backend_url", state.backendUrl); fillVoiceOptions(); pollSystem(); };
-  $("#setTtsUrl").onchange = (e) => { state.ttsUrl = e.target.value.trim().replace(/\/$/, ""); localStorage.setItem("jarvis_tts_url", state.ttsUrl); ttsLog(state.ttsUrl ? "Voicebox-URL gesetzt: " + state.ttsUrl : "Voicebox aus – Browser-Stimme aktiv."); };
+  $("#setTtsUrl").onchange = (e) => { state.ttsUrl = e.target.value.trim().replace(/\/$/, ""); localStorage.setItem("jarvis_tts_url", state.ttsUrl); ttsLog(state.ttsUrl ? "Voicebox URL set: " + state.ttsUrl : "Voicebox override cleared – central Vercel configuration applies."); };
   $("#setTtsToken").onchange = (e) => { state.ttsToken = e.target.value.trim(); localStorage.setItem("jarvis_tts_token", state.ttsToken); };
-  $("#setTtsVoice").onchange = (e) => { state.ttsVoice = e.target.value.trim() || "de_DE-thorsten-medium"; localStorage.setItem("jarvis_tts_voice", state.ttsVoice); };
+  $("#setTtsVoice").onchange = (e) => { state.ttsVoice = e.target.value || "en_GB-alan-medium"; localStorage.setItem("jarvis_tts_voice", state.ttsVoice); ttsLog("Pi voice set to " + state.ttsVoice + " (must be installed on the Pi)."); };
   $("#setPiMode").onchange = (e) => { state.pi = e.target.checked; localStorage.setItem("jarvis_pi", e.target.checked ? "1" : "0"); document.body.classList.toggle("pi", state.pi); };
 
   $("#btnSettings").onclick = async () => {
     $("#settingsModal").hidden = false;
-    // KI-Status (ohne Backend berechenbar)
-    const ollamaOk = await ollamaAvailable(true);
+    // AI status: Groq only
     const rows = [
-      { ok: Boolean(state.groqKey) || Boolean(state.llmEnv.groq), name: "Groq (Free Tier) ⭐", note: state.groqKey ? "Eigener Key im Browser gespeichert" : state.llmEnv.groq ? "Key serverseitig in Vercel-Env" : "Key fehlt – kostenlos auf console.groq.com holen und links eintragen" },
-      { ok: ollamaOk, name: "Ollama lokal (Mini-Modell)", note: `${state.ollamaUrl} · Modell ${state.ollamaModel} · inkl. MCP-Tools (CORS: OLLAMA_ORIGINS setzen, siehe MCP.md)` },
-      { ok: true, name: "Pollinations (kein Key)", note: "Keyloser Fallback, keine MCP-Tools" },
-      { ok: true, name: "Demo-Modus (offline)", note: "Regelbasiert, immer verfügbar" },
+      { ok: state.groqServerOk, name: "Groq (server key in Vercel)", note: state.groqServerOk ? "Active – every answer comes from Groq, nothing local." : "No server key found." },
+      { ok: Boolean(state.groqKey), name: "Groq (your key in this browser)", note: state.groqKey ? "Stored as a fallback if the server route fails." : "Optional – get a free key at console.groq.com." },
     ];
     $("#llmList").innerHTML = rows.map((p) =>
-      `<div>${p.ok ? "✅" : "⚪"} ${escapeHtml(p.name)}<br><small class="muted">${escapeHtml(p.note)}</small></div>`).join("");
-    $("#pillLLM").textContent = "● KI: " + (state.groqKey || state.llmEnv.groq ? "groq" : ollamaOk ? "ollama" : "demo");
-    // MCP-Status
+      `<div>${p.ok ? "online" : "not set"} – ${escapeHtml(p.name)}<br><small class="muted">${escapeHtml(p.note)}</small></div>`).join("");
+    $("#pillLLM").textContent = "● AI: " + (state.groqServerOk || state.groqKey ? "Groq" : "Groq (no key)");
+    // MCP status
     try {
       const d = await Mcp.status();
       $("#mcpList").innerHTML = d.servers.map((s) =>
-        `<div>${s.connected ? "✅" : s.enabled ? "❌" : "⚪"} ${escapeHtml(s.name)} – ${s.enabled ? s.tools + " Tools" : "inaktiv"}${s.error ? `<br><small class="muted">${escapeHtml(s.error)}</small>` : ""}</div>`).join("")
-        || '<span class="muted">Keine MCP-Server. Im 🔌 MCP-Plugin z. B. Composio hinzufügen.</span>';
-    } catch { $("#mcpList").textContent = "MCP-Status nicht verfügbar."; }
+        `<div>${s.connected ? "online" : s.enabled ? "offline" : "off"} – ${escapeHtml(s.name)} – ${s.enabled ? s.tools + " tools" : "inactive"}${s.error ? `<br><small class="muted">${escapeHtml(s.error)}</small>` : ""}</div>`).join("")
+        || '<span class="muted">No MCP servers. Add one in the MCP plugin, e.g. Composio.</span>';
+    } catch { $("#mcpList").textContent = "MCP status unavailable."; }
   };
   $("#settingsClose").onclick = () => ($("#settingsModal").hidden = true);
 }

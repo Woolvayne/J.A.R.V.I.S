@@ -1,19 +1,18 @@
-/* J.A.R.V.I.S – MCP-Client im Browser (Model Context Protocol, Streamable HTTP)
+/* J.A.R.V.I.S – MCP client in the browser (Model Context Protocol, Streamable HTTP)
  *
- * Verbindet BELIEBIGE Remote-MCP-Server direkt aus dem Dashboard – z. B.
- * Composio (Gmail, Google Drive, Sheets, Slack …), eigene Server, u. v. m.
- * Ablauf wie überall bei MCP: initialize -> tools/list -> Tools werden der
- * KI (Groq/Ollama) als Function-Calling übergeben -> tools/call bei Bedarf.
+ * Connects ANY remote MCP server directly from the dashboard – e.g.
+ * Composio (Gmail, Google Drive, Sheets, Slack …), your own servers, etc.
+ * Flow, like everywhere with MCP: initialize -> tools/list -> tools are
+ * handed to the AI (Groq) via function calling -> tools/call when needed.
  *
- * Transport-Wege pro Server wählbar:
- *   proxy  – über die Vercel-Function /api/mcp (umgeht CORS, empfohlen)
- *   direct – Browser direkt zum Server (nur wenn der Server CORS erlaubt)
- *   auto   – erst direct, bei Fehler proxy
- * stdio-Server (lokale Programme) kann ein Browser prinzipbedingt NICHT
- * starten – dafür gibt es optional das Pi-Backend (siehe MCP.md).
+ * Transport per server (selectable):
+ *   proxy  – via the Vercel function /api/mcp (avoids CORS, recommended)
+ *   direct – browser straight to the server (only if the server allows CORS)
+ *   auto   – direct first, proxy on failure
+ * A browser fundamentally CANNOT start stdio servers (local programs).
  *
- * Serverliste liegt nur im Browser (localStorage "jarvis_mcp_servers").
- * API-Keys/URLs mit Tokens NICHT teilen – sie sind wie Passwörter.
+ * The server list lives only in the browser (localStorage "jarvis_mcp_servers").
+ * Do NOT share API keys/URLs with tokens – they are as sensitive as passwords.
  */
 
 const MCP_KEY = "jarvis_mcp_servers";
@@ -21,16 +20,16 @@ let _rpcId = 0;
 const _sessions = {};   // name -> { id: sessionId|null, ready: bool }
 let _toolsCache = null; // [{full, server, tool, description, schema}]
 let _toolsAt = 0;
-const _mcpErrors = {};  // servername -> Fehlermeldung
+const _mcpErrors = {};  // server name -> error message
 
 const MCP_PRESETS = {
   composio: {
     name: "composio",
-    url: "https://backend.composio.dev/v3/mcp/DEINE_SERVER_ID?user_id=DEINE_USER_ID",
-    headers: { "x-api-key": "ak_DEIN_COMPOSIO_KEY" },
+    url: "https://backend.composio.dev/v3/mcp/YOUR_SERVER_ID?user_id=YOUR_USER_ID",
+    headers: { "x-api-key": "ak_YOUR_COMPOSIO_KEY" },
     via: "proxy",
     enabled: true,
-    hint: "Composio-Dashboard: MCP-Server erstellen (Toolkits z. B. Gmail/Drive), SERVER_ID, USER_ID und API-Key ersetzen.",
+    hint: "Composio dashboard: create an MCP server (toolkits e.g. Gmail/Drive), replace SERVER_ID, USER_ID and the API key.",
   },
   composioConnect: {
     name: "composio-connect",
@@ -38,7 +37,7 @@ const MCP_PRESETS = {
     headers: {},
     via: "proxy",
     enabled: true,
-    hint: "Composio Connect: Ist der Key in der Vercel-Env hinterlegt (COMPOSIO_CONSUMER_KEY), Header einfach {} lassen – der Proxy trägt x-consumer-api-key serverseitig ein. Sonst hier {\"x-consumer-api-key\":\"ck_…\"} eintragen.",
+    hint: "Composio Connect: if the key is stored in the Vercel env (COMPOSIO_CONSUMER_KEY), just leave the header as {} – the proxy adds x-consumer-api-key server-side. Otherwise enter {\"x-consumer-api-key\":\"ck_…\"} here.",
   },
 };
 
@@ -63,13 +62,13 @@ function _mcpStringify(result) {
       const parts = result.content.map((b) =>
         b && b.type === "text" ? String(b.text || "") : JSON.stringify(b));
       const text = parts.filter(Boolean).join("\n");
-      return (result.isError ? "MCP-Tool meldet Fehler: " : "") + (text.slice(0, 6000) || "(leeres Ergebnis)");
+      return (result.isError ? "MCP tool reports an error: " : "") + (text.slice(0, 6000) || "(empty result)");
     }
     return JSON.stringify(result).slice(0, 6000);
   } catch { return String(result).slice(0, 6000); }
 }
 
-/* ------------------------------------------------------------- Transport */
+/* ------------------------------------------------------------ transport */
 async function _mcpHttpDirect(server, payload) {
   const sess = _sessions[server.name] || {};
   const headers = {
@@ -101,8 +100,8 @@ async function _mcpHttpProxy(server, payload) {
 function _mcpParse(text, wantId) {
   const t = (text || "").trim();
   if (!t) return {};
-  if (t.startsWith("{")) { try { return JSON.parse(t); } catch { /* weiter zu SSE */ } }
-  // SSE: data:-Zeilen durchsuchen
+  if (t.startsWith("{")) { try { return JSON.parse(t); } catch { /* fall through to SSE */ } }
+  // SSE: scan the data: lines
   let found = {};
   for (const line of t.split(/\r?\n/)) {
     if (!line.startsWith("data:")) continue;
@@ -110,10 +109,10 @@ function _mcpParse(text, wantId) {
       const msg = JSON.parse(line.slice(5).trim());
       if (wantId == null || msg.id === wantId) return msg;
       found = msg;
-    } catch { /* ignorieren */ }
+    } catch { /* ignore */ }
   }
   if (Object.keys(found).length) return found;
-  throw new Error("Unerwartete MCP-Antwort: " + t.slice(0, 160));
+  throw new Error("Unexpected MCP response: " + t.slice(0, 160));
 }
 
 async function _mcpSend(server, payload) {
@@ -129,13 +128,13 @@ async function _mcpSend(server, payload) {
     try { return await attempt(_mcpHttpDirect); }
     catch { return attempt(_mcpHttpProxy); }
   }
-  return attempt(_mcpHttpProxy); // proxy (Standard)
+  return attempt(_mcpHttpProxy); // proxy (default)
 }
 
 async function _mcpRequest(server, method, params) {
   const id = ++_rpcId;
   const msg = await _mcpSend(server, { jsonrpc: "2.0", id, method, params: params || {} });
-  if (msg.error) throw new Error("MCP-Fehler " + method + ": " + JSON.stringify(msg.error).slice(0, 200));
+  if (msg.error) throw new Error("MCP error " + method + ": " + JSON.stringify(msg.error).slice(0, 200));
   return msg.result || {};
 }
 
@@ -145,9 +144,9 @@ async function _mcpEnsure(server) {
   await _mcpRequest(server, "initialize", {
     protocolVersion: "2024-11-05",
     capabilities: {},
-    clientInfo: { name: "jarvis-vercel", version: "2.0.0" },
+    clientInfo: { name: "jarvis-vercel", version: "3.0.0" },
   });
-  try { await _mcpSend(server, { jsonrpc: "2.0", method: "notifications/initialized" }); } catch { /* egal */ }
+  try { await _mcpSend(server, { jsonrpc: "2.0", method: "notifications/initialized" }); } catch { /* ignore */ }
   sess.ready = true;
 }
 
@@ -194,15 +193,15 @@ async function mcpOpenaiTools() {
 async function mcpCallTool(full, args) {
   const tools = await mcpListTools(false);
   const entry = tools.find((t) => t.full === full);
-  if (!entry) return "Unbekanntes MCP-Tool: " + full;
+  if (!entry) return "Unknown MCP tool: " + full;
   const server = mcpLoadServers().find((s) => s.name === entry.server);
-  if (!server || !server.enabled) return "MCP-Server '" + entry.server + "' ist nicht aktiviert.";
+  if (!server || !server.enabled) return "MCP server '" + entry.server + "' is not enabled.";
   try {
     await _mcpEnsure(server);
     const result = await _mcpRequest(server, "tools/call", { name: entry.tool, arguments: args || {} });
     return _mcpStringify(result);
   } catch (e) {
-    return "MCP-Aufruf fehlgeschlagen (" + full + "): " + String(e.message || e);
+    return "MCP call failed (" + full + "): " + String(e.message || e);
   }
 }
 

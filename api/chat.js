@@ -1,36 +1,31 @@
-// J.A.R.V.I.S – Vercel Function: dünner LLM-Proxy (1 Aufruf, kein Tool-Loop).
-// Der Tool-Loop (MCP) läuft im Browser; diese Funktion versteckt nur den
-// API-Key (Vercel-Env) ODER leitet einen Browser-Key (BYOK) weiter.
-// POST { messages, provider?, model?, tools? }  ->  OpenAI-kompatible Antwort
-// Optionaler Header: x-llm-key: <eigener Key> (überschreibt den Env-Key)
+// J.A.R.V.I.S – Vercel Function: thin Groq proxy (single call, no tool loop).
+// The tool loop (MCP) runs in the browser; this function only hides the API
+// key (Vercel env) OR forwards a browser key (BYOK). Groq only – no local
+// models, no other providers, no demo fallback.
+// POST { messages, model?, tools? }  ->  OpenAI-compatible response
+// Optional header: x-llm-key: <own key> (overrides the env key)
 
-const PROVIDERS = {
-  groq: { base: "https://api.groq.com/openai/v1", env: "GROQ_API_KEY", model: "llama-3.3-70b-versatile" },
-  gemini: { base: "https://generativelanguage.googleapis.com/v1beta/openai", env: "GEMINI_API_KEY", model: "gemini-2.5-flash" },
-  openrouter: { base: "https://openrouter.ai/api/v1", env: "OPENROUTER_API_KEY", model: "openrouter/free" },
-  cerebras: { base: "https://api.cerebras.ai/v1", env: "CEREBRAS_API_KEY", model: "llama-3.3-70b" },
-  mistral: { base: "https://api.mistral.ai/v1", env: "MISTRAL_API_KEY", model: "mistral-small-latest" },
-};
+const GROQ_BASE = "https://api.groq.com/openai/v1";
+const DEFAULT_MODEL = "llama-3.3-70b-versatile";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Nur POST" });
+  if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
   const body = typeof req.body === "string" ? safeJson(req.body) : (req.body || {});
-  const { messages, provider = "groq", model, tools } = body;
+  const { messages, model, tools } = body;
   if (!Array.isArray(messages) || !messages.length) {
-    return res.status(400).json({ error: "messages fehlt" });
+    return res.status(400).json({ error: "messages missing" });
   }
-  const cfg = PROVIDERS[provider] || PROVIDERS.groq;
-  const key = req.headers["x-llm-key"] || process.env[cfg.env];
+  const key = req.headers["x-llm-key"] || process.env.GROQ_API_KEY;
   if (!key) {
     return res.status(501).json({
-      error: `Kein API-Key für ${provider}. Entweder Env ${cfg.env} in Vercel setzen oder eigenen Key im Dashboard (Einstellungen) eintragen.`,
+      error: "No Groq API key. Set GROQ_API_KEY in Vercel or enter your own key in the dashboard (Settings).",
     });
   }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 28000);
   try {
     const payload = {
-      model: model || cfg.model,
+      model: model || DEFAULT_MODEL,
       messages,
       max_tokens: 700,
       temperature: 0.7,
@@ -39,7 +34,7 @@ export default async function handler(req, res) {
       payload.tools = tools;
       payload.tool_choice = "auto";
     }
-    const r = await fetch(`${cfg.base}/chat/completions`, {
+    const r = await fetch(`${GROQ_BASE}/chat/completions`, {
       method: "POST",
       signal: ctrl.signal,
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -50,7 +45,7 @@ export default async function handler(req, res) {
     res.setHeader("Content-Type", "application/json");
     return res.send(text);
   } catch (e) {
-    return res.status(502).json({ error: "LLM-Upstream nicht erreichbar: " + String(e && e.message || e) });
+    return res.status(502).json({ error: "Groq upstream unreachable: " + String(e && e.message || e) });
   } finally {
     clearTimeout(timer);
   }

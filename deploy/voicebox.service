@@ -1,5 +1,5 @@
 [Unit]
-Description=J.A.R.V.I.S Voicebox (Piper TTS auf dem Pi)
+Description=J.A.R.V.I.S Voicebox (Piper TTS on the Pi)
 After=network.target
 
 [Service]

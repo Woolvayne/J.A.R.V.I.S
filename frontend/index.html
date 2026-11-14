@@ -140,6 +140,17 @@
       </label>
       <label class="field"><input type="checkbox" id="setTtsOn" checked> Antworten vorlesen (TTS)</label>
       <label class="field"><input type="checkbox" id="setAutoSpeak" checked> Begrüßung beim Start sprechen</label>
+      <div class="field"><button type="button" class="btn" id="btnTtsTest">🔊 Stimme testen</button>
+        <div id="ttsStatus" class="muted small" style="margin-top:6px">Noch kein Test. Tipp: Auf iPad braucht Safari eine erste Berührung, bevor Ton erlaubt ist.</div></div>
+      <label class="field">Pi-Voicebox-URL (Piper-TTS auf dem Pi, öffentlich via Cloudflare Tunnel – leer = Browser-Stimme)
+        <input type="text" id="setTtsUrl" placeholder="https://voice.deine-domain.de">
+      </label>
+      <label class="field">Pi-Voicebox-Token (X-Voice-Token, steht auf dem Pi in der voicebox.env)
+        <input type="password" id="setTtsToken" placeholder="Token (leer = kein Token nötig)" autocomplete="off">
+      </label>
+      <label class="field">Pi-Voicebox-Stimme (Piper-Modellname auf dem Pi)
+        <input type="text" id="setTtsVoice" placeholder="de_DE-thorsten-medium">
+      </label>
       <label class="field">Groq API-Key (kostenlos, console.groq.com – bleibt nur in diesem Browser)
         <input type="password" id="setGroqKey" placeholder="gsk_… (leer = Vercel-Env-Key nutzen)" autocomplete="off">
       </label>

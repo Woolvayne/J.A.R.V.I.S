@@ -1,79 +1,55 @@
-# 🧩 J.A.R.V.I.S – Eigenes Plugin bauen
+# J.A.R.V.I.S – Build your own plugin
 
-> **Tipp:** Für externe Werkzeuge (Dateien, Zeit, Datenbanken, APIs …) brauchst
-> du oft gar kein eigenes Plugin: Jeder **MCP-Server** wird automatisch zum
-> KI-Werkzeug – siehe **MCP.md**. Plugins sind die richtige Wahl für eigene
-> UI-Fenster im Dashboard.
+Plugins live in `frontend/js/plugins.js`. Each plugin is a small object
+in the `PLUGINS` array — the grid, the modal window and the voice
+command (“open calculator” …) come for free.
 
-Plugins leben in **`frontend/js/plugins.js`** in der Liste `PLUGINS`.
-Ein Plugin ist ein einziges Objekt – kein Build, kein Framework:
+## Minimal example
 
 ```js
-{ id: "meinplugin", icon: "🚀", name: "Mein Plugin", desc: "Was es tut (Tooltip)",
-  render(body, opts) {
-    // body = Inhalt des Plugin-Fensters (HTMLElement)
-    // opts = optionale Parameter, z. B. vom Sprachbefehl übergeben
-    body.innerHTML = `<p>Hallo, Sir.</p>`;
-  } },
-```
-
-Danach erscheint es automatisch im Plugin-Grid des Dashboards (inkl. Zähler).
-
-## Per Sprach-/Textbefehl öffnen
-
-In `frontend/js/chat.js` in `runLocalCommand()` ein Stichwort ergänzen:
-
-```js
-const pluginCmds = {
-  // ...
-  rakete: "meinplugin",
-};
-```
-
-Dann öffnet „Öffne Rakete“ dein Plugin. Parameter übergeben geht so:
-
-```js
-openPlugin("meinplugin", { q: "irgendwas" });  // in render() als opts.q verfügbar
-```
-
-## Nützliche Helfer (global verfügbar)
-
-| Helfer | Zweck |
-|---|---|
-| `$(sel)` | `document.querySelector` (aus `app.js`) |
-| `escapeHtml(s)` | XSS-sicheres Einfügen von Text |
-| `speak(text)` | Text per Edge TTS vorlesen |
-| `addMsg("jarvis", text, provider)` | Nachricht in den Chat schreiben |
-| `setOrb("speak"\|"listen"\|"idle", text)` | Orb-Zustand/Statuszeile setzen |
-| `state` | `{ city, voice, ttsOn, autoSpeak, backend }` |
-| `API` | Basis-URL des Backends (`""` = gleicher Host) |
-
-## Kostenlose APIs ohne Key (Ideen)
-
-- **Wetter:** Open-Meteo (`api.open-meteo.com`) – auch direkt aus dem Browser (CORS ok)
-- **Suche:** DuckDuckGo Instant Answers (`api.duckduckgo.com`)
-- **Wissen:** Wikipedia REST (`de.wikipedia.org/api/rest_v1/...`)
-- **Bilder:** Pollinations (`image.pollinations.ai/prompt/...`)
-- **Übersetzung:** MyMemory (`api.mymemory.translated.net`)
-- **GitHub:** Öffentliche REST-API (`api.github.com`)
-- **Eigene Daten:** Neue Route in `backend/server.py` ergänzen (FastAPI), z. B. `/api/meinding`
-
-> CORS-Tipp: APIs ohne CORS-Freigabe einfach über das Backend proxien –
-> Vorbild sind `/api/news`, `/api/weather` und `/api/crypto` in `backend/server.py`.
-
-## Beispiel: Münzwurf-Plugin
-
-```js
-{ id: "coin", icon: "🪙", name: "Münze", desc: "Kopf oder Zahl",
+{ id: "coin", icon: "CO", name: "Coin flip", desc: "Heads or tails",
   render(b) {
-    b.innerHTML = `<div class="timer-big" id="coinOut">🪙</div>
-      <div class="row"><button class="btn" id="coinGo">Werfen</button></div>`;
-    $("#coinGo").onclick = () => {
-      const r = Math.random() < 0.5 ? "Kopf" : "Zahl";
-      $("#coinOut").textContent = r;
-      speak(r + ", Sir.");
+    b.innerHTML = `<div class="timer-big" id="coinOut">?</div>
+      <div class="row"><button class="btn" id="coinFlip">Flip</button></div>`;
+    $("#coinFlip").onclick = () => {
+      const r = Math.random() < 0.5 ? "Heads" : "Tails";
+      $("#coinOut").textContent = r; speak(r + ", Sir.");
     };
   } },
 ```
 
-In `PLUGINS` einfügen, Seite neu laden, fertig. 🎉
+Paste it into `PLUGINS`, reload the page, done.
+
+## Fields
+
+| Field | Meaning |
+|---|---|
+| `id` | Unique ID; also the voice command (“open **coin**”) and chat alias target |
+| `icon` | 1–2 letter monogram shown as a tile (no emojis) |
+| `name` | Display name in the grid and modal title |
+| `desc` | Tooltip; shown in descriptions |
+| `render(body, opts)` | Builds the UI into `body` (the modal content element) |
+
+## Helpers available inside `render`
+
+- `$(sel)` – querySelector shorthand (scoped care: modal content is unique on the page)
+- `speak("…")` – read something aloud (Pi voice, browser fallback)
+- `addMsg("jarvis", "…", "via …")` – add a chat message
+- `closePlugin()` – close the modal
+- `API`, `state` – current deployment state (base path and runtime settings)
+- `escapeHtml(x)` – always escape user/provider text before `innerHTML`
+
+## Building blocks (CSS classes already styled)
+
+`row` (input + button row), `btn` / `btn ghost`, `result` (output box),
+`kv` (label/value lines), `timer-big`, `todo-item`, `muted` / `small`,
+`details.guide` + `ol.steps` for walkthroughs, `img.gen` for images.
+
+## Rules of the house
+
+- **No emojis** in the UI; use the monogram tile and plain text.
+- English only; address the user as “Sir” in spoken confirmations.
+- Free services only; keys belong in Settings/localStorage or Vercel
+  env — never hard-code secrets.
+- Escape external text (`escapeHtml`) — plugin HTML is injected.
+- Keep it light: it must stay snappy on a Pi 3B+ browser and iPad.

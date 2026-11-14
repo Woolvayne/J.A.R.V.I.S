@@ -1,114 +1,124 @@
-# J.A.R.V.I.S – Just A Rather Very Intelligent System 🚀 Vercel-Edition
+# J.A.R.V.I.S – Just A Rather Very Intelligent System — Vercel Edition
 
-Ein JARVIS-artiges HUD-Dashboard wie aus den Iron-Man-Filmen – jetzt **komplett
-ohne eigenes Backend**: Vercel hostet die statische Seite, die KI läuft per
-**Groq (gratis)** oder **lokal per Ollama**, und **echte MCP-Server wie
-Composio** (Gmail, Drive, Sheets …) werden direkt aus dem Browser verbunden.
-**100 % kostenlos, keine kostenpflichtigen APIs.**
+A minimal voice assistant HUD, styled after a certain film butler: an
+arc-reactor orb you tap to speak, a British voice from your own
+Raspberry Pi, an AI brain by **Groq only**, and real tools via the
+**Model Context Protocol (MCP)** — e.g. Composio with Gmail, Google
+Drive and Sheets. Everything runs as a static page on Vercel plus a
+few tiny serverless helper functions. No backend to host, nothing
+local to install (except the optional Pi voice), all free tiers.
 
-![Stack](https://img.shields.io/badge/Stack-Vercel%20%2B%20Vanilla%20JS-00d4ff) ![Kosten](https://img.shields.io/badge/Kosten-0%20%E2%82%AC-2bff88) ![Backend](https://img.shields.io/badge/Backend-keins%20n%C3%B6tig-1a7fff) ![Sprache](https://img.shields.io/badge/UI-Deutsch-1a7fff)
+Optimised for Safari on iPad and iPhone, usable on any modern browser.
 
-## ✨ Features
+## Live
 
-- **Kein Backend, kein Server, keine Wartung** – deployen und läuft
-- **HUD-Dashboard:** Geräte-Infos, Wetter (Open-Meteo), Weltuhr, News (RSS), Krypto (CoinGecko) – alles direkt aus dem Browser
-- **Animierter Orb**, Boot-Sequenz, deutsche **Browser-Stimme** + Spracheingabe (Web Speech API)
-- **KI gratis ohne Download:** Groq ⭐ (eigener Key im Browser oder Vercel-Env) → Ollama lokal → Pollinations (keylos) → Demo
-- **🔌 Echte MCP-Server im Browser:** Composio & beliebige Remote-MCPs (Streamable HTTP) – die KI nutzt ihre Tools automatisch (Gmail lesen, Drive suchen …)
-- **Lokale Mini-Modelle mit MCP:** Ollama (`qwen2.5:0.5b`) auf Pi/PC + dieselben MCP-Tools, komplett offline möglich
-- **20 Plugins** + Offline-Befehle („Wetter in Berlin“, „Timer 5 Minuten“, „Rechne 12*8“ …)
-- Optional weiter dabei: Pi-Backend für stdio-MCP-Server, Edge TTS & echte Pi-Werte
+**https://jarvis-claw11.vercel.app** — open it, tap the orb, allow the
+microphone, and talk. Typing works too.
 
-## 🚀 Auf Vercel deployen (2 Minuten)
+> If the page asks for a Vercel login first: Vercel dashboard →
+> Project `jarvis` → Settings → Deployment Protection →
+> **Vercel Authentication: Disabled**.
 
-1. Repo auf GitHub → [vercel.com](https://vercel.com) → **Add New → Project** → dieses Repo importieren.
-2. **Keine Einstellungen ändern** (`vercel.json` regelt alles: `frontend/` als Output, `api/` als Functions) → **Deploy**.
-3. Fertig! Dashboard öffnen, ⚙ Einstellungen:
-   - **Groq-Key** eintragen (kostenlos: console.groq.com, keine Kreditkarte) – bleibt nur in deinem Browser, **oder**
-   - stattdessen Env `GROQ_API_KEY` in Vercel setzen (Project → Settings → Environment Variables), dann gilt der Key serverseitig für alle Besucher deiner Instanz.
+## Features
 
-Optional in Vercel: `MCP_ALLOWED_HOSTS=composio.dev,mein-server.de` (welche MCP-Hosts der Proxy `/api/mcp` anrufen darf).
+- **Tap the orb and talk** – speech recognition in British English;
+  replies are read back in a British Piper voice from the Pi
+  (`en_GB-alan-medium`, the closest legal voice to the films).
+- **Groq only** – every AI answer comes from Groq (Llama 3.3 70B, free
+  tier). No local model, no offline demo fallback: if Groq cannot be
+  reached, JARVIS says so instead of guessing.
+- **Real MCP servers in the browser** – Composio and any remote MCP
+  server (Streamable HTTP); Groq calls their tools automatically
+  (function calling loop, up to 4 rounds).
+- **17 plugins** – weather, news, crypto, notes, tasks, calculator,
+  timer, stopwatch, world clock, search, Wikipedia, GitHub, image
+  generation, translator, pomodoro and more.
+- **Minimal design** – near-black HUD, hairline cyan, delicate motion
+  (respects `prefers-reduced-motion` and the low-power mode).
+- **Pi-friendly** – the dashboard runs fine in a browser on a Pi 3B+;
+  the Pi's real job is the voice (see below).
 
-**Lokal testen:** `npx vercel dev` – oder einfach `frontend/index.html` öffnen (dann ohne `/api`-Functions: Groq per Browser-Key, Ollama & Pollinations laufen trotzdem).
+## Deploy on Vercel (2 minutes)
 
-## 🔌 Composio & MCP (das Herzstück)
+1. Import this repo at vercel.com → **Add New → Project** (framework:
+   *Other*; output directory `frontend` is already configured via
+   `vercel.json`).
+2. Optional but recommended, in **Settings → Environment Variables**:
+   - `GROQ_API_KEY` – free key from https://console.groq.com/keys
+   - `COMPOSIO_CONSUMER_KEY` – Composio Connect `ck_…` key (enables
+     one-tap Gmail/Drive/Sheets tools)
+   - `VOICEBOX_URL`, `VOICEBOX_TOKEN`, `VOICEBOX_VOICE=en_GB-alan-medium`
+     – your Pi voicebox (see `VOICEBOX.md`)
+   - `MCP_ALLOWED_HOSTS` – MCP host allowlist (default `composio.dev`)
+3. Done. Without any env keys, JARVIS still works: paste your own Groq
+   key under **Settings → Groq API key**.
 
-1. Auf composio.dev einen **MCP-Server** erstellen (Toolkits: Gmail, Google Drive, Sheets …; Accounts per OAuth verbinden).
-2. MCP-URL (`https://backend.composio.dev/v3/mcp/…`) + API-Key kopieren.
-3. In J.A.R.V.I.S: 🔌 **MCP-Plugin → „+ Composio-Vorlage“** → URL & `{"x-api-key":"ak_…"}` eintragen → verbinden.
-4. Fragen wie *„Zeig meine letzten E-Mails“* – die KI ruft die Composio-Tools selbstständig auf.
+## Voice: the Pi Voicebox
 
-Beliebige andere Remote-MCP-Server gehen genauso (URL + Header-JSON).
-**Ausführliche Anleitung: [MCP.md](MCP.md)** – inkl. Ollama-CORS-Setup,
-Sicherheits-Hinweisen und Fehlerbehebung.
+Speech synthesis runs **on your Raspberry Pi** (Piper TTS, offline,
+unlimited, free) and is exposed to the internet through a Cloudflare
+Tunnel — no LAN-only setup, no port forwarding. Full guide:
+[`VOICEBOX.md`](VOICEBOX.md). If the Pi is off, JARVIS falls back to
+the device voice automatically.
 
-> Warum kein stdio-MCP im Browser? Ein Browser kann keine lokalen Programme
-> (`uvx`/`npx`) starten. Wer das braucht, nimmt das optionale Pi-Backend (unten).
+## MCP: real tools (Gmail, Drive, Sheets …)
 
-## 🤖 Welche kostenlose KI?
+JARVIS is the **MCP host**; the client runs in your browser and the
+tool-calling loop is built in.
 
-| Weg | Key | MCP-Tools | Hinweis |
-|---|---|---|---|
-| **Groq** ⭐ | gratis Key (Browser oder Vercel-Env) | ✅ | Sehr schnell, Llama 3.3 70B, ~1.000 Anfragen/Tag. Empfehlung |
-| **Ollama lokal** | nein | ✅ | Mini-Modell auf Pi/PC (`qwen2.5:0.5b`), offline, langsam. CORS: `OLLAMA_ORIGINS=*` (nur Heimnetz!) |
-| Gemini u. a. | gratis Key (Vercel-Env via `/api/chat`) | ✅ | Provider per API wählbar (groq/gemini/openrouter/cerebras/mistral) |
-| Pollinations | nein | ❌ | Keyloser Fallback direkt aus dem Browser |
-| Demo | nein | ❌ | Offline-Regeln, immer da |
+- With `COMPOSIO_CONSUMER_KEY` set in Vercel, the `composio-connect`
+  server is created automatically; the key is injected server-side by
+  `/api/mcp` and never reaches the browser or git.
+- Otherwise open the **MCP plugin → “+ Composio template”**, paste your
+  MCP URL and API key, and press “Save & connect”. Step-by-step
+  instructions (incl. screenshots-free walkthrough of the Composio
+  dashboard) are inside the plugin and in [`MCP.md`](MCP.md).
+- Then just ask: *“Show my latest emails”* — Groq picks the tools.
 
-## 🎙 Beispiele
+Note: a browser cannot start local stdio MCP servers (`npx …`,
+`uvx …`); remote Streamable-HTTP servers only.
 
-| Sag / schreib | Was passiert |
+## Examples
+
+- “Good morning, JARVIS.”
+- “What’s the weather in [Your City]?”
+- “Show my latest emails.” *(with Composio connected)*
+- “Set a timer for 5 minutes.”
+- “Open the calculator.”
+- “What can you do?”
+
+## Architecture
+
+```
+Browser (iPad / Safari)                Vercel                    External
+┌───────────────────────┐        ┌──────────────────┐
+│ static HUD (frontend/) │──AI──▶ │ /api/chat        │──▶ Groq (only AI)
+│ MCP client in JS       │──MCP─▶ │ /api/mcp (proxy) │──▶ Composio / MCP servers
+│ speech recognition     │──TTS─▶ │ /api/tts (proxy) │──▶ Pi Voicebox (Piper)
+│ (Web Speech API)       │──news▶ │ /api/news (RSS)  │──▶ BBC, Guardian, …
+└───────────────────────┘        └──────────────────┘        Raspberry Pi 3B+
+  weather/crypto direct                                        Piper + Cloudflare
+  from browser APIs                                            Tunnel (Alan voice)
+```
+
+## Project structure
+
+| Path | What |
 |---|---|
-| „Zeig meine letzten E-Mails“ | Composio-Gmail-Tool (wenn verbunden) |
-| „Wetter in Hamburg“ | Wetter-Widget |
-| „Timer 5 Minuten“ / „Rechne 12*8“ | Lokale Plugins, offline |
-| „Wie spät ist es in Tokio?“ | Weltuhr / MCP-Time-Server |
-| Beliebige Frage | Groq (gratis) oder Ollama lokal |
+| `frontend/` | Static HUD (HTML/CSS/JS) – deployed to Vercel |
+| `frontend/js/app.js` | Boot, clock, device info, weather, news, crypto, orb |
+| `frontend/js/voice.js` | Speech in/out (Web Speech API + Pi Voicebox) |
+| `frontend/js/chat.js` | Chat, Groq-only answering, MCP tool loop |
+| `frontend/js/mcp.js` | MCP client in the browser |
+| `frontend/js/plugins.js` | The 17 plugins |
+| `api/` | Tiny Vercel Functions: `chat`, `mcp`, `tts`, `health`, `news` |
+| `voicebox/` + `install-voicebox-pi.sh` | Piper TTS server for the Pi |
+| `MCP.md` / `PLUGINS.md` / `VOICEBOX.md` | Guides |
 
-## 🏗 Architektur
+## Privacy & security
 
-```
-Vercel
-├─ frontend/ (statisch) index.html · css · js
-│   ├─ app.js      Geräte-Infos, Wetter/News/Krypto direkt, Orb
-│   ├─ mcp.js      MCP-Client im Browser (initialize/tools/list/tools/call)
-│   ├─ chat.js     Befehle + KI-Loop (Groq/Ollama/Pollinations) inkl. MCP-Tools
-│   ├─ voice.js    Browser-Stimme + Spracheingabe (optional Edge TTS via Pi)
-│   └─ plugins.js  20 Plugins (inkl. MCP-Manager mit Composio-Vorlage)
-└─ api/ (winzige Functions, optional aber empfohlen)
-    ├─ chat.js   LLM-Proxy – versteckt Env-Keys, 1 Aufruf, Loop bleibt im Browser
-    ├─ mcp.js    MCP-Proxy – umgeht CORS, Host-Allowlist (Composio & Co.)
-    ├─ news.js   RSS-Proxy          └─ health.js  Status/Env-Übersicht
-
-Optional (Repo): backend/ FastAPI auf dem Pi (stdio-MCP, Edge TTS, Pi-Werte),
-install-pi.sh, install-ollama-pi.sh, mcp_servers.json
-```
-
-Sicherheit: Keys liegen nur im Browser (localStorage) oder in der Vercel-Env –
-nie im Code. MCP-Proxy hat eine Host-Allowlist. Dashboard ohne Login → bei
-serverseitigen Keys die Vercel-Instanz ggf. per Vercel-Schutz absichern.
-
-## 🍓 Raspberry Pi?
-
-Das Dashboard läuft im Pi-Browser (Sparmodus in den ⚙ Einstellungen) oder auf
-Handy/PC – der Pi wird nur noch gebraucht für: **Ollama-Mini-Modell**
-(`./install-ollama-pi.sh`), **stdio-MCP-Server** oder **Edge TTS**
-(`./install-pi.sh`, Backend-URL dann in den Einstellungen eintragen).
-
-## 📁 Projektstruktur
-
-```
-frontend/   Das Dashboard (Vercel-Output)
-api/        Vercel-Functions: health · chat · mcp · news
-vercel.json Deployment-Konfiguration
-backend/    Optionales Pi-Backend (FastAPI: stdio-MCP, Edge TTS, Pi-Werte)
-deploy/     systemd-Vorlage · install-pi.sh · install-ollama-pi.sh
-MCP.md      MCP-Anleitung (Composio, Ollama, Sicherheit)
-PLUGINS.md  Eigenes Plugin bauen
-```
-
-Inspiriert von JARVIS-HUD-Projekten auf GitHub; gebaut mit Vercel, Groq &
-Gemini Free Tier, Pollinations, Edge TTS (optional), Open-Meteo, CoinGecko,
-Composio-MCP – alles gratis.
-
-*„At your service, Sir.“*
+- API keys belong in Vercel environment variables (never in git).
+  The browser only ever learns *that* a key exists, never the key.
+- Your own Groq key (Settings) stays in your browser’s local storage.
+- The Pi voicebox answers only with its token header; the token is
+  injected by `/api/tts` server-side.

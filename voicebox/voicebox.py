@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
 """
-J.A.R.V.I.S "Voicebox" – winziger TTS-Server für den Raspberry Pi (3B+ tauglich).
+J.A.R.V.I.S "Voicebox" – tiny TTS server for the Raspberry Pi (3B+ friendly).
 
-Warum nicht das Original "Voicebox" (jamiepine/voicebox, Qwen3-TTS)?
-Das braucht mind. 8 GB RAM – der Pi 3B+ hat 1 GB. Diese Voicebox nutzt
-stattdessen Piper (rhasspy/piper): neuronale Stimmen, läuft auf dem Pi
-schneller als Echtzeit, komplett offline & kostenlos.
+Why not the original "Voicebox" (jamiepine/voicebox, Qwen3-TTS)?
+It needs at least 8 GB RAM – the Pi 3B+ has 1 GB. This voicebox uses
+Piper (rhasspy/piper) instead: neural voices, faster than real time on
+the Pi, completely offline & free. Default voice: en_GB-alan-medium
+(British – the closest legal Piper voice to the film J.A.R.V.I.S).
 
-Endpunkte:
+Endpoints:
   GET  /health  -> {"ok": true, "engine": "piper", "voices": [...], ...}
-  GET  /voices  -> verfügbare Stimmen (Modellnamen ohne .onnx)
-  POST /tts     -> JSON {"text": "...", "voice": "de_DE-thorsten-medium"}
-                   Antwort: audio/wav. Optional Token-Schutz per
-                   Header "X-Voice-Token" oder "Authorization: Bearer ..."
+  GET  /voices  -> available voices (model names without .onnx)
+  POST /tts     -> JSON {"text": "...", "voice": "en_GB-alan-medium"}
+                   Response: audio/wav. Optional token protection via
+                   header "X-Voice-Token" or "Authorization: Bearer ..."
 
-Start (normalerweise per systemd, siehe deploy/voicebox.service):
-  VOICEBOX_TOKEN=geheim python3 voicebox.py
+Start (normally via systemd, see deploy/voicebox.service):
+  VOICEBOX_TOKEN=secret python3 voicebox.py
 
-Der Server lauscht standardmäßig nur auf 127.0.0.1:8770 – öffentlich wird
-er NICHT per LAN/Portfreigabe, sondern per Cloudflare Tunnel
-(https://voice.deine-domain.de -> http://127.0.0.1:8770), siehe VOICEBOX.md.
-Nur Python-Standardbibliothek + `piper`-Binary nötig.
+The server listens on 127.0.0.1:8770 by default – it is exposed publicly
+NOT via LAN/port forwarding but via a Cloudflare Tunnel
+(https://voice.your-domain -> http://127.0.0.1:8770), see VOICEBOX.md.
+Only the Python standard library + the `piper` binary are needed.
 """
 from __future__ import annotations
 
@@ -37,7 +38,7 @@ PORT = int(os.getenv("VOICEBOX_PORT", "8770"))
 TOKEN = os.getenv("VOICEBOX_TOKEN", "")
 PIPER = os.getenv("PIPER_BIN", "piper")
 VOICES_DIR = os.getenv("VOICEBOX_VOICES", "/opt/voicebox/voices")
-DEFAULT_VOICE = os.getenv("VOICEBOX_VOICE", "de_DE-thorsten-medium")
+DEFAULT_VOICE = os.getenv("VOICEBOX_VOICE", "en_GB-alan-medium")
 MAX_TEXT = 1200
 
 _lock = threading.Lock()          # Piper nutzt die Pi-CPU voll – seriell arbeiten
@@ -55,16 +56,16 @@ def list_voices() -> list[str]:
 def synthesize(text: str, voice: str) -> bytes:
     text = (text or "").strip()[:MAX_TEXT]
     if not text:
-        raise ValueError("Leerer Text")
+        raise ValueError("Empty text")
     voice = (voice or DEFAULT_VOICE).strip()
     if "/" in voice or ".." in voice:
-        raise ValueError("Ungültiger Stimmenname")
+        raise ValueError("Invalid voice name")
     key = (voice, text)
     if key in _cache:
         return _cache[key]
     model = os.path.join(VOICES_DIR, voice + ".onnx")
     if not os.path.isfile(model):
-        raise FileNotFoundError("Stimme nicht installiert: " + voice)
+        raise FileNotFoundError("Voice not installed: " + voice)
     fd, out_path = tempfile.mkstemp(suffix=".wav")
     os.close(fd)
     try:
@@ -75,7 +76,7 @@ def synthesize(text: str, voice: str) -> bytes:
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180,
             )
         if proc.returncode != 0:
-            raise RuntimeError("Piper-Fehler: " + proc.stderr.decode("utf-8", "ignore")[-300:])
+            raise RuntimeError("Piper error: " + proc.stderr.decode("utf-8", "ignore")[-300:])
         with open(out_path, "rb") as fh:
             data = fh.read()
     finally:
@@ -93,7 +94,7 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "JarvisVoicebox/1.0"
     protocol_version = "HTTP/1.1"
 
-    # -- Helfer ---------------------------------------------------------
+    # -- helpers --------------------------------------------------------
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -131,12 +132,12 @@ class Handler(BaseHTTPRequestHandler):
                              "voices": list_voices(), "token_required": bool(TOKEN)})
         elif parsed.path == "/voices":
             self._json(200, {"voices": list_voices(), "default": DEFAULT_VOICE})
-        elif parsed.path == "/tts":  # Bequemlichkeit: GET /tts?text=Hallo&token=…
+        elif parsed.path == "/tts":  # convenience: GET /tts?text=Hello&token=…
             if not self._token_ok(qs.get("token", [""])[0]):
-                return self._json(401, {"error": "Token fehlt/falsch (X-Voice-Token)"})
+                return self._json(401, {"error": "Token missing/wrong (X-Voice-Token)"})
             try:
                 data = synthesize(qs.get("text", [""])[0], qs.get("voice", [DEFAULT_VOICE])[0])
-            except Exception as e:  # noqa: BLE001 – Fehlertext an Client geben
+            except Exception as e:  # noqa: BLE001 – pass the error text to the client
                 return self._json(502, {"error": str(e)})
             self.send_response(200)
             self._cors()
@@ -145,25 +146,25 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
         else:
-            self._json(404, {"error": "Unbekannter Pfad"})
+            self._json(404, {"error": "Unknown path"})
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        # Body immer zuerst lesen, sonst zerlegt Keep-Alive den Rest als
-        # angebliche neue Anfrage (400-Fehler im Log).
+        # Always read the body first, otherwise keep-alive mangles the rest
+        # into a bogus new request (400 errors in the log).
         try:
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b"{}"
         except Exception:
             raw = b"{}"
         if parsed.path != "/tts":
-            return self._json(404, {"error": "Unbekannter Pfad"})
+            return self._json(404, {"error": "Unknown path"})
         if not self._token_ok():
-            return self._json(401, {"error": "Token fehlt/falsch (X-Voice-Token)"})
+            return self._json(401, {"error": "Token missing/wrong (X-Voice-Token)"})
         try:
             payload = json.loads(raw or b"{}")
         except Exception:
-            return self._json(400, {"error": "Ungültiges JSON"})
+            return self._json(400, {"error": "Invalid JSON"})
         try:
             data = synthesize(payload.get("text", ""), payload.get("voice") or DEFAULT_VOICE)
         except FileNotFoundError as e:
@@ -177,10 +178,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def log_message(self, fmt, *args):  # Journal etwas ruhiger
+    def log_message(self, fmt, *args):  # keep the journal quiet
         print("[voicebox]", fmt % args, flush=True)
 
 
 if __name__ == "__main__":
-    print(f"Voicebox läuft auf http://{HOST}:{PORT} – Stimmen: {list_voices()} – Token: {'an' if TOKEN else 'AUS'}", flush=True)
+    print(f"Voicebox running on http://{HOST}:{PORT} – voices: {list_voices()} – token: {'ON' if TOKEN else 'OFF'}", flush=True)
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

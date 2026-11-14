@@ -1,101 +1,105 @@
-/* J.A.R.V.I.S – Stimme ohne Backend:
- * Standard: Browser-Stimme (speechSynthesis, kostenlos, offline im Browser).
- * Optional: Edge TTS, wenn in den Einstellungen eine Pi-Backend-URL gesetzt
- * ist (dort läuft weiter backend/tts.py). STT: Web Speech API (de-DE).
+/* J.A.R.V.I.S – Voice:
+ * Output: Pi Voicebox (Piper, British voice Alan) via Cloudflare/Vercel,
+ *         browser voice (en-GB) as fallback. Input: Web Speech API (en-GB).
  *
- * iOS/Safari-Besonderheiten, die hier behandelt werden:
- * - Sprachausgabe darf erst nach einer Nutzer-Geste starten -> die erste
- *   Berührung "entsperrt" die Stimme (unlockSpeech); eine vorher angefragte
- *   Begrüßung wird danach nachgeholt.
- * - Lange Texte werden in kurze Sätze zerlegt – Safari verschluckt sonst
- *   gern lange Utterances.
- * - Mikrofon: Tippen auf den pulsierenden Orb (oder 🎙) fragt zuerst per
- *   getUserMedia die Mikrofon-Freigabe ab und startet dann die
- *   Spracherkennung. Das erkannte Wort landet im Eingabefeld (dort auch
- *   per Tastatur korrigierbar) und wird dann gesendet. Tippen geht immer.
- */
-/* Hinweis: $ , API und state werden zentral in app.js definiert. */
+ * iOS/Safari specifics handled here:
+ * - Speech may only start after a user gesture -> the first touch unlocks
+ *   audio (unlockSpeech); anything requested earlier is played afterwards.
+ * - The voice test speaks FIRST (inside the tap) and runs its connection
+ *   check afterwards – a 10-second check must not eat the tap permission,
+ *   otherwise Safari silently swallows the test audio and replays it on
+ *   some later tap.
+ * - A newer answer always supersedes older, not-yet-played audio.
+ * - Long texts are split into short sentences (Safari drops long ones).
+ * - Microphone: tapping the pulsing orb (or the mic button) asks for the
+ *   mic permission first, then starts recognition. The transcript lands
+ *   in the input field (editable) and is sent from there. Typing works
+ *   at any time. */
+/* Note: $, API and state are defined centrally in app.js. */
 
 let speechUnlocked = false;
 let deferredSpeech = "";
 let speechRunId = 0;
 let audioEl = null;
-const _utteranceRefs = []; // Safari sammelt sonst gern aktive Utterances ein (GC-Bug)
+const _utteranceRefs = []; // Safari GC would otherwise collect live utterances
 const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
 
-// Kleine Diagnose: letzte TTS-Ereignisse (wird in den ⚙ Einstellungen gezeigt)
+// Small diagnostic log (shown in Settings)
 const ttsEvents = [];
 function ttsLog(msg) {
-  const line = new Date().toLocaleTimeString("de-DE") + " " + msg;
+  const line = new Date().toLocaleTimeString("en-GB") + " " + msg;
   ttsEvents.unshift(line);
-  if (ttsEvents.length > 6) ttsEvents.pop();
-  try { console.log("[TTS]", msg); } catch { /* egal */ }
+  if (ttsEvents.length > 7) ttsEvents.pop();
+  try { console.log("[TTS]", msg); } catch { /* ignore */ }
   const el = document.querySelector("#ttsStatus");
   if (el) el.innerHTML = ttsEvents.map((e) => escapeHtml(e)).join("<br>");
 }
 
-// Fehlertext eines TTS-Servers lesbar machen (z. B. "Voicebox HTTP 401:
-// Token fehlt/falsch") – sonst sähe man nur ein nichtssagendes "HTTP 502".
+// Reflect the active speech route in the top-bar pill (Pi Alan / browser).
+function voicePill(mode) {
+  const p = document.querySelector("#pillTTS");
+  if (!p) return;
+  if (mode === "pi") { p.textContent = "● Voice: Pi (Alan)"; p.className = "pill ok"; }
+  else if (mode === "off") { p.textContent = "● Voice: off"; p.className = "pill warn"; }
+  else { p.textContent = "● Voice: browser"; p.className = "pill warn"; }
+}
+
+// Make a TTS server error readable (e.g. "Voicebox HTTP 401: token ...")
 async function ttsHttpError(r, label) {
   let detail = "";
   try {
     const t = await r.text();
     try { const j = JSON.parse(t); detail = [j.error, j.detail].filter(Boolean).join(" – "); }
     catch { detail = t.slice(0, 120); }
-  } catch { /* egal */ }
+  } catch { /* ignore */ }
   return new Error(label + " HTTP " + r.status + (detail ? ": " + detail : ""));
 }
 
-/* ------------------------------------------------------- TTS (Ausgabe) */
+/* ------------------------------------------------------- TTS (output) */
 async function speak(text) {
   if (!state.ttsOn || !text) return;
-  const clean = text.replace(/[*_`#>]/g, "").slice(0, 900);
-  // iOS blockt Audio ohne vorherige Nutzer-Geste: merken und beim ersten
-  // Tippen/Klicken nachholen statt tonlos zu verpuffen.
-  if (!speechUnlocked) { deferredSpeech = clean; ttsLog("Warte auf erste Berührung (iOS-Sperre) …"); return; }
-  setOrb("speak", "J.A.R.V.I.S spricht …");
+  const clean = String(text).replace(/[*_`#>]/g, "").slice(0, 900);
+  pendingAudioBlob = null; // a newer answer supersedes any older pending audio
+  // iOS blocks audio without a prior gesture: remember and play on first tap
+  if (!speechUnlocked) { deferredSpeech = clean; ttsLog("Waiting for first tap (iOS audio lock) …"); return; }
+  setOrb("speak", "J.A.R.V.I.S is speaking …");
   let audioBlocked = false;
   try {
     if (state.ttsUrl) {
-      // 1. Wahl: Pi-Voicebox (Piper) – URL z. B. per Cloudflare Tunnel öffentlich
+      // First choice: Pi Voicebox directly (URL set in Settings)
       const r = await fetch(state.ttsUrl + "/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(state.ttsToken ? { "X-Voice-Token": state.ttsToken } : {}) },
         body: JSON.stringify({ text: clean, voice: state.ttsVoice || undefined }),
       });
-      if (!r.ok) throw await ttsHttpError(r, "voicebox");
+      if (!r.ok) throw await ttsHttpError(r, "Voicebox");
       await playAudioBlob(await r.blob());
-      ttsLog("Voicebox (Pi) hat gesprochen.");
+      voicePill("pi");
+      ttsLog("Pi Voicebox has spoken.");
     } else if (state.ttsServer) {
-      // 1b. Wahl: Voicebox zentral in Vercel eingetragen – Token bleibt
-      // serverseitig, der Browser ruft nur /api/tts (kein Eintippen nötig)
+      // Voicebox configured centrally in Vercel – the token stays on the
+      // server, the browser only calls /api/tts (nothing to type anywhere)
       const r = await fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: clean, voice: state.ttsVoice || undefined }),
       });
-      if (!r.ok) throw await ttsHttpError(r, "voicebox (Vercel)");
+      if (!r.ok) throw await ttsHttpError(r, "Voicebox (via Vercel)");
       await playAudioBlob(await r.blob());
-      ttsLog("Voicebox (Pi, via Vercel) hat gesprochen.");
-    } else if (state.backendUrl) {
-      // 2. Wahl: optionales Pi-Backend mit Edge TTS (bessere Stimme)
-      const r = await fetch(state.backendUrl + "/api/tts", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: clean, voice: state.voice || "de-DE-ConradNeural" }),
-      });
-      if (!r.ok) throw new Error("tts fail");
-      await playAudioBlob(await r.blob());
-      ttsLog("Edge TTS (Pi-Backend) hat gesprochen.");
+      voicePill("pi");
+      ttsLog("Pi Voicebox (via Vercel) has spoken.");
     } else {
-      // 3. Wahl: Browser-Stimme (Safari/iOS)
+      // Fallback: browser voice (en-GB)
+      voicePill("browser");
       await speakBrowser(clean);
     }
   } catch (e) {
-    if (e && e.message === "audio-blocked") { audioBlocked = true; return; } // Audio kommt beim nächsten Tippen – keine Zweitstimme
-    ttsLog("Server-Stimme fehlgeschlagen (" + String(e.message || e) + ") – nutze Browser-Stimme.");
+    if (e && e.message === "audio-blocked") { audioBlocked = true; return; } // plays on next tap – no second voice
+    ttsLog("Server voice failed (" + String(e.message || e) + ") – using browser voice.");
+    voicePill("browser");
     await speakBrowser(clean).catch(() => {});
   } finally {
-    setOrb("idle", audioBlocked ? "Einmal tippen – dann lese ich die Antwort vor." : "Bereit, Sir.");
+    setOrb("idle", audioBlocked ? "Tap once – then I will read the answer aloud." : "Ready, Sir.");
   }
 }
 
@@ -104,34 +108,33 @@ function getAudioEl() {
   return audioEl;
 }
 
-let pendingAudioBlob = null; // Audio, das iOS erst beim nächsten Tippen erlaubt
+let pendingAudioBlob = null; // audio iOS only allows after the next tap
 
 async function playAudioBlob(blob, isRetry) {
   const el = getAudioEl();
   const url = URL.createObjectURL(blob);
   el.src = url;
   el.volume = 1;
-  ttsLog("Audio erhalten (" + Math.round(blob.size / 1024) + " KB) – spiele ab …");
-  try { el.load(); } catch { /* egal */ }
+  ttsLog("Audio received (" + Math.round(blob.size / 1024) + " KB) – playing …");
+  try { el.load(); } catch { /* ignore */ }
   const ended = new Promise((res) => { el.onended = res; el.onerror = res; });
   try {
-    await el.play(); // auf iOS ok, weil das Element beim 1. Tippen "geprimed" wurde
-    ttsLog("Wiedergabe läuft" + (isRetry ? " (nach Tippen)" : "") + " …");
+    await el.play(); // allowed on iOS because the element was primed on first tap
+    ttsLog("Playback running" + (isRetry ? " (after tap)" : "") + " …");
     await ended;
-    ttsLog("Wiedergabe fertig.");
+    ttsLog("Playback finished.");
   } catch (e) {
-    // iOS verweigert play() ohne frische Nutzer-Geste (kommt vor, wenn der
-    // Pi ein paar Sekunden zum Generieren brauchte). Nicht aufgeben und
-    // NICHT zusätzlich die Browser-Stimme starten (sonst Doppel-Ausgabe),
-    // sondern dasselbe Audio beim nächsten Tippen sofort abspielen.
+    // iOS refused play() without a fresh gesture (happens when the Pi took
+    // a few seconds to generate). Keep THIS audio and play it on next tap;
+    // do not start the browser voice on top of it.
     pendingAudioBlob = blob;
-    ttsLog("iOS blockiert den Ton noch (" + String((e && e.name) || e) + ") – bitte einmal kurz tippen, dann spreche ich.");
-    setOrb("idle", "Einmal tippen – dann lese ich die Antwort vor.");
+    ttsLog("iOS is still blocking the sound (" + String((e && e.name) || e) + ") – tap once, then I will speak.");
+    setOrb("idle", "Tap once – then I will read the answer aloud.");
     throw new Error("audio-blocked");
   } finally { URL.revokeObjectURL(url); }
 }
 
-// Nächstes Tippen spielt ein von iOS blockiertes Audio nach (innerhalb der Geste).
+// The next tap plays audio that iOS had blocked (inside the gesture).
 document.addEventListener("pointerdown", () => {
   if (!pendingAudioBlob) return;
   const blob = pendingAudioBlob;
@@ -141,34 +144,34 @@ document.addEventListener("pointerdown", () => {
 
 function stopSpeaking() {
   speechRunId++;
-  try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch { /* egal */ }
-  if (audioEl) { try { audioEl.pause(); } catch { /* egal */ } }
+  try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch { /* ignore */ }
+  if (audioEl) { try { audioEl.pause(); } catch { /* ignore */ } }
 }
 
-// Erste Nutzer-Geste entsperrt Audio auf iOS (Pflicht in Safari).
-// WICHTIG: kein Leerzeichen-/Stumm-Satz mehr an speechSynthesis – der kann in
-// Safari die Warteschlange blockieren, sodass danach gar nichts mehr kommt.
+// The first user gesture unlocks audio on iOS (required by Safari).
+// IMPORTANT: no blank "wake-up" utterance to speechSynthesis any more –
+// on Safari that could jam the queue so nothing ever came out.
 function unlockSpeech() {
   if (speechUnlocked) return;
   speechUnlocked = true;
   try {
-    // HTML-Audio-Element mit stillem WAV "primen", damit Server-Stimmen
-    // (Voicebox/Edge) später auch ohne direkten Klick abspielen dürfen.
+    // Prime the HTML audio element with a silent WAV so server voices
+    // (Voicebox) may also play later without a direct tap.
     const el = getAudioEl();
     el.src = SILENT_WAV;
-    // Nur pausieren, wenn noch das Stille-WAV geladen ist – läuft inzwischen
-    // schon echtes Voicebox-Audio, darf das Prime-Promise es nicht stoppen.
+    // Only pause if the silent WAV is still loaded – if real Voicebox
+    // audio is already running, the prime promise must not stop it.
     el.play().then(() => { if (el.src === SILENT_WAV) { el.pause(); el.currentTime = 0; } }).catch(() => {});
-  } catch { /* egal */ }
+  } catch { /* ignore */ }
   try {
     if (window.speechSynthesis) {
       speechSynthesis.resume();
-      browserVoices(); // Stimmen schon mal laden (kommen auf iOS async)
+      browserVoices(); // preload voices (arrive asynchronously on iOS)
     }
-  } catch { /* Stimme ist optional */ }
+  } catch { /* voice is optional */ }
   const pending = deferredSpeech;
   deferredSpeech = "";
-  if (pending && state.ttsOn) speak(pending); // nachgeholte Antwort/Begrüßung
+  if (pending && state.ttsOn) speak(pending); // deferred greeting/answer
   if (typeof fillVoiceOptions === "function") fillVoiceOptions();
 }
 ["pointerdown", "touchend", "keydown"].forEach((ev) =>
@@ -178,7 +181,7 @@ function browserVoices() {
   try { return speechSynthesis.getVoices(); } catch { return []; }
 }
 if (window.speechSynthesis && speechSynthesis.addEventListener) {
-  try { speechSynthesis.addEventListener("voiceschanged", () => { if (typeof fillVoiceOptions === "function") fillVoiceOptions(); }); } catch { /* egal */ }
+  try { speechSynthesis.addEventListener("voiceschanged", () => { if (typeof fillVoiceOptions === "function") fillVoiceOptions(); }); } catch { /* ignore */ }
 }
 
 function splitSpeechText(text) {
@@ -202,125 +205,129 @@ function speakBrowser(text) {
   return new Promise((resolve) => {
     const run = ++speechRunId;
     try {
-      if (!window.speechSynthesis) { ttsLog("speechSynthesis fehlt in diesem Browser."); resolve(); return; }
-      // Safari-Bug: cancel() direkt vor speak() lässt die Ausgabe oft komplett
-      // ausfallen – deshalb nur abbrechen, wenn wirklich etwas läuft/anhängt.
+      if (!window.speechSynthesis) { ttsLog("speechSynthesis is not available in this browser."); resolve(); return; }
+      // Safari bug: cancel() right before speak() often drops the output
+      // entirely – only cancel when something is actually running/queued.
       if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
       speechSynthesis.resume();
       const chunks = splitSpeechText(text);
       if (!chunks.length) { resolve(); return; }
-      ttsLog("Browser-Stimme: " + chunks.length + " Satz-Teile, " + browserVoices().length + " Stimmen geladen.");
+      ttsLog("Browser voice: " + chunks.length + " sentence parts, " + browserVoices().length + " voices loaded.");
       let idx = 0;
       const next = () => {
         if (run !== speechRunId || idx >= chunks.length) { resolve(); return; }
         const chunk = chunks[idx++];
         const u = new SpeechSynthesisUtterance(chunk);
-        _utteranceRefs.push(u); // Referenz halten (Safari-GC-Bug)
+        _utteranceRefs.push(u); // keep a reference (Safari GC bug)
         const voices = browserVoices();
         const langOf = (v) => String(v.lang || "").replace("_", "-").toLowerCase();
         const chosen = voices.find((v) => v.name === state.voice)
-          || voices.find((v) => langOf(v) === "de-de")
-          || voices.find((v) => langOf(v).startsWith("de"));
-        if (chosen) { u.voice = chosen; u.lang = chosen.lang; } else { u.lang = "de-DE"; }
-        u.rate = 0.98; u.pitch = 0.9;
+          || voices.find((v) => langOf(v) === "en-gb")
+          || voices.find((v) => langOf(v).startsWith("en"));
+        if (chosen) { u.voice = chosen; u.lang = chosen.lang; } else { u.lang = "en-GB"; }
+        u.rate = 1.0; u.pitch = 0.85;
         let done = false, started = false;
         const cleanup = () => { const i = _utteranceRefs.indexOf(u); if (i >= 0) _utteranceRefs.splice(i, 1); };
         const finish = () => { if (!done) { done = true; cleanup(); setTimeout(next, 40); } };
-        u.onstart = () => { started = true; ttsLog("Ausgabe läuft: „" + chunk.slice(0, 40) + "…“"); };
+        u.onstart = () => { started = true; ttsLog("Speaking: \"" + chunk.slice(0, 40) + "…\""); };
         u.onend = finish;
-        u.onerror = (e) => { ttsLog("Utterance-Fehler: " + (e.error || "?")); finish(); };
+        u.onerror = (e) => { ttsLog("Utterance error: " + (e.error || "?")); finish(); };
         speechSynthesis.speak(u);
-        // Watchdog: Kommt kein onstart und die Engine meldet nichts aktiv,
-        // hat Safari die Ausgabe geschluckt (passiert ohne "frische"
-        // Nutzer-Geste). Dann Text merken – er wird beim nächsten Tippen
-        // sofort (innerhalb der Geste) gesprochen.
+        // Watchdog: no onstart and engine idle = Safari swallowed it
+        // (happens without a fresh gesture). Keep the text – it is spoken
+        // immediately on the next tap, inside that gesture.
         setTimeout(() => {
           if (!done && !started && run === speechRunId && !speechSynthesis.speaking && !speechSynthesis.pending) {
-            ttsLog("Safari hat die Ausgabe blockiert – Text wird beim nächsten Tippen gesprochen.");
+            ttsLog("Safari blocked the output – I will say it on your next tap.");
             deferredSpeech = chunks.slice(idx - 1).join(" ");
-            speechUnlocked = false; // nächste Berührung löst unlockSpeech erneut aus
+            speechUnlocked = false; // next touch re-runs unlockSpeech
             cleanup();
-            setOrb("idle", "Tippe kurz, damit ich die Antwort vorlese.");
+            setOrb("idle", "Tap once so I can read the answer aloud.");
             resolve();
           }
         }, 900);
-        // Sicherheitsnetz, falls Safari kein onend liefert
+        // Safety net in case Safari never fires onend
         setTimeout(finish, Math.min(12000, 1200 + chunk.length * 110));
       };
       setTimeout(next, 60);
-    } catch (e) { ttsLog("speakBrowser-Fehler: " + String(e.message || e)); resolve(); }
+    } catch (e) { ttsLog("speakBrowser error: " + String(e.message || e)); resolve(); }
   });
 }
 
-// Test-Knopf in den Einstellungen: spricht direkt im Klick (Nutzer-Geste),
-// dadurch sieht man sofort, ob die Ausgabe grundsätzlich geht. Vorher ein
-// kurzer Verbindungs-Selbsttest, damit im Status steht, WO es hakt:
-// Pi-Tunnel nicht erreichbar? Token abgelehnt? Oder erst iOS-Wiedergabe?
-async function testVoice() {
+/* ------------------------------------------- Voice test + diagnostics */
+// The test speaks IMMEDIATELY (inside the tap, so Safari allows the
+// sound) – the connection check runs afterwards and only writes to the
+// log. Previously the ~10 s check ran first and the test audio was
+// silently parked, then replayed on some unrelated later tap.
+function testVoice() {
   unlockSpeech();
-  const engine = state.ttsUrl ? "Pi-Voicebox" : state.ttsServer ? "Pi-Voicebox (via Vercel)" : state.backendUrl ? "Edge TTS (Pi)" : "Browser-Stimme";
-  ttsLog("Test gestartet (" + engine + ", " + browserVoices().length + " Browser-Stimmen).");
-  try {
-    if (state.ttsServer && !state.ttsUrl) {
-      const r = await fetch("/api/tts");
-      const d = await r.json();
-      if (!d.configured) ttsLog("Selbsttest: Voicebox ist in Vercel NICHT eingetragen.");
-      else if (!d.upstream_reachable) ttsLog("Selbsttest: Pi über Cloudflare-Tunnel NICHT erreichbar – läuft der Tunnel auf dem Pi noch?");
-      else if (!d.token_accepted) ttsLog("Selbsttest: Pi erreichbar, aber TOKEN ABGELEHNT (HTTP " + (d.upstream_tts_status || 401) + ") – auf dem Pi: sudo systemctl restart voicebox (lädt das Token neu), danach hier erneut testen.");
-      else ttsLog("Selbsttest OK: Pi erreichbar, Token akzeptiert, " + (d.audio_bytes || "?") + " Byte Audio erzeugt. Jetzt kommt der Hörtest …");
-    } else if (state.ttsUrl) {
-      const r = await fetch(state.ttsUrl + "/health");
-      const d = await r.json();
-      ttsLog(r.ok ? "Selbsttest: Voicebox erreichbar, Stimmen: " + ((d.voices || []).join(", ") || "?") : "Selbsttest: Voicebox meldet HTTP " + r.status);
-    }
-  } catch (e) { ttsLog("Selbsttest fehlgeschlagen: " + String(e.message || e)); }
-  speak("J.A.R.V.I.S Sprachausgabe-Test. Wenn du mich hörst, funktioniert die Stimme, Sir.");
+  const engine = state.ttsUrl ? "Pi Voicebox" : state.ttsServer ? "Pi Voicebox (via Vercel)" : "Browser voice";
+  ttsLog("Test started (" + engine + ", voice " + (state.ttsVoice || "?") + "). Speaking now – the Pi needs a few seconds …");
+  speak("Good day, Sir. This is J.A.R.V.I.S. If you can hear me, the British voice is working.");
+  diagnoseVoicebox(); // fire and forget – result lands in the log below
 }
 
-/* ------------------------------------------------ STT (Spracheingabe) */
+async function diagnoseVoicebox() {
+  try {
+    if (state.ttsServer && !state.ttsUrl) {
+      const r = await fetch("/api/tts?check=" + Date.now(), { cache: "no-store" });
+      const d = await r.json();
+      if (!d.configured) ttsLog("Check: Voicebox is NOT configured in Vercel.");
+      else if (!d.upstream_reachable) ttsLog("Check: Pi is NOT reachable via the Cloudflare tunnel – is the tunnel still running on the Pi?");
+      else if (!d.token_accepted) ttsLog("Check: Pi reachable, but the TOKEN was rejected (HTTP " + (d.upstream_tts_status || 401) + "). The token in Vercel must match the Pi (voicebox.env).");
+      else ttsLog("Check passed: Pi reachable, token accepted, " + (d.audio_bytes || "?") + " bytes of audio generated.");
+    } else if (state.ttsUrl) {
+      const r = await fetch(state.ttsUrl + "/health", { cache: "no-store" });
+      const d = await r.json();
+      ttsLog(r.ok ? "Check: Voicebox reachable, voices: " + ((d.voices || []).join(", ") || "?") : "Check: Voicebox answered HTTP " + r.status);
+    }
+  } catch (e) { ttsLog("Check failed: " + String(e.message || e)); }
+}
+
+/* ------------------------------------------------ STT (voice input) */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null, listening = false, micStarting = false, voiceSubmitted = false;
 
-// Fragt die Mikrofon-Freigabe aktiv ab (Browser-Dialog), bevor erkannt wird.
+// Actively request microphone permission (browser dialog) before recognising.
 async function requestMicPermission() {
   if (!window.isSecureContext) throw new Error("insecure");
   if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    stream.getTracks().forEach((t) => t.stop()); // nur Freigabe holen, Aufnahme macht die Erkennung
+    stream.getTracks().forEach((t) => t.stop()); // permission only; recognition does the recording
   }
 }
 
 async function toggleMic() {
   unlockSpeech();
   const input = $("#chatInput");
-  if (listening && recognition) { try { recognition.stop(); } catch { /* egal */ } return; }
+  if (listening && recognition) { try { recognition.stop(); } catch { /* ignore */ } return; }
   if (micStarting) return;
 
   if (!SR) {
-    // Kein SpeechRecognition (manche Safari-Versionen): Tippen + iOS-Diktat der Tastatur gehen immer.
-    addMsg("jarvis", "Dieser Browser unterstützt keine direkte Spracheingabe, Sir. Du kannst deine Frage einfach unten eintippen – oder auf der iOS-Tastatur das Mikrofon-Symbol nutzen.", "system");
+    // No SpeechRecognition (some Safari versions): typing + iOS keyboard dictation always work.
+    addMsg("jarvis", "This browser does not support direct voice input, Sir. You can simply type your question below – or use the microphone key on the iOS keyboard.", "system");
     if (input) input.focus();
     return;
   }
 
   micStarting = true;
   voiceSubmitted = false;
-  setOrb("listen", "Mikrofon-Freigabe wird angefragt …");
+  setOrb("listen", "Requesting microphone permission …");
   try {
-    stopSpeaking(); // nicht gleichzeitig sprechen und zuhören
+    stopSpeaking(); // never speak and listen at the same time
     await requestMicPermission();
   } catch {
     micStarting = false;
-    setOrb("idle", "Bereit, Sir.");
-    addMsg("jarvis", "Ich darf das Mikrofon nicht nutzen, Sir. Bitte in Safari den Mikrofon-Zugriff für diese Seite erlauben (Adressleiste → Website-Einstellungen). Alternativ: Frage einfach unten eintippen.", "system");
+    setOrb("idle", "Ready, Sir.");
+    addMsg("jarvis", "I am not allowed to use the microphone, Sir. Please allow microphone access for this site in Safari (address bar, Website Settings). Alternatively, simply type your question below.", "system");
     if (input) input.focus();
     return;
   }
 
   try {
     recognition = new SR();
-    recognition.lang = "de-DE";
-    recognition.interimResults = true;   // Live-Text im Eingabefeld zeigen
+    recognition.lang = "en-GB";
+    recognition.interimResults = true;   // live text in the input field
     recognition.continuous = false;
     recognition.maxAlternatives = 1;
 
@@ -328,23 +335,23 @@ async function toggleMic() {
       micStarting = false;
       listening = true;
       const btn = $("#btnMic"); if (btn) btn.classList.add("listening");
-      setOrb("listen", "Ich höre zu – sprich jetzt …");
+      setOrb("listen", "Listening – speak now …");
     };
     recognition.onend = () => {
       listening = false;
       micStarting = false;
       const btn = $("#btnMic"); if (btn) btn.classList.remove("listening");
-      if (!voiceSubmitted) setOrb("idle", "Bereit, Sir.");
+      if (!voiceSubmitted) setOrb("idle", "Ready, Sir.");
     };
     recognition.onerror = (e) => {
       const hints = {
-        "not-allowed": "Mikrofon-Zugriff verweigert. Bitte in Safari für diese Seite erlauben – oder die Frage unten eintippen.",
-        "service-not-allowed": "Der Sprachdienst ist auf diesem Gerät nicht erlaubt. Bitte Frage unten eintippen oder das iOS-Tastatur-Mikrofon nutzen.",
-        "no-speech": "Ich habe nichts gehört, Sir. Tippe auf den Orb und sprich bitte noch einmal – oder tippe die Frage ein.",
-        "audio-capture": "Kein Mikrofon gefunden, Sir. Bitte Frage unten eintippen.",
-        network: "Die Spracherkennung braucht Internet. Bitte Verbindung prüfen oder die Frage eintippen.",
+        "not-allowed": "Microphone access denied. Please allow it for this site in Safari – or type your question below.",
+        "service-not-allowed": "The speech service is not allowed on this device. Please type below or use the iOS keyboard microphone.",
+        "no-speech": "I heard nothing, Sir. Tap the orb and speak once more – or type the question.",
+        "audio-capture": "No microphone found, Sir. Please type your question below.",
+        network: "Speech recognition needs an internet connection. Please check it or type the question.",
       };
-      addMsg("jarvis", "Mikrofon: " + (hints[e.error] || ("Fehler (" + e.error + "). Bitte Frage unten eintippen.")), "system");
+      addMsg("jarvis", "Microphone: " + (hints[e.error] || ("error (" + e.error + "). Please type your question below.")), "system");
     };
     recognition.onresult = (e) => {
       let finalText = "", interim = "";
@@ -353,15 +360,15 @@ async function toggleMic() {
         if (e.results[i].isFinal) finalText += t; else interim += t;
       }
       const shown = (finalText || interim).trim();
-      if (input && shown) input.value = shown; // sichtbar + per Tastatur änderbar
+      if (input && shown) input.value = shown; // visible and editable by keyboard
       if (finalText.trim() && !voiceSubmitted) {
         voiceSubmitted = true;
-        setOrb("listen", "Frage erkannt – du kannst sie unten noch kurz korrigieren …");
-        // Kurze Korrektur-Chance (Tippen), dann wird der Feldinhalt gesendet.
+        setOrb("listen", "Heard you – you can still correct it below …");
+        // Brief moment to correct by typing, then the field content is sent.
         setTimeout(() => {
           const text = input ? input.value.trim() : finalText.trim();
           if (input) input.value = "";
-          try { if (recognition) recognition.stop(); } catch { /* egal */ }
+          try { if (recognition) recognition.stop(); } catch { /* ignore */ }
           if (text) handleUserText(text);
         }, 900);
       }
@@ -369,8 +376,8 @@ async function toggleMic() {
     recognition.start();
   } catch {
     micStarting = false;
-    setOrb("idle", "Bereit, Sir.");
-    addMsg("jarvis", "Die Spracheingabe konnte nicht starten, Sir. Bitte Frage einfach unten eintippen.", "system");
+    setOrb("idle", "Ready, Sir.");
+    addMsg("jarvis", "Voice input could not start, Sir. Please simply type your question below.", "system");
     if (input) input.focus();
   }
 }
@@ -378,7 +385,7 @@ async function toggleMic() {
 document.addEventListener("DOMContentLoaded", () => {
   const mic = $("#btnMic");
   if (mic) mic.addEventListener("click", toggleMic);
-  // Pulsierender Orb = großer Mikrofon-Knopf (besonders auf iPad praktisch)
+  // The pulsing orb is the big microphone button (handy on iPad)
   const orbEl = $("#orb");
   if (orbEl) {
     orbEl.addEventListener("click", toggleMic);
@@ -386,8 +393,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleMic(); }
     });
   }
-  // Eingabefeld bleibt immer tippbar; auf iPad ins Sichtfeld holen, wenn die Tastatur aufgeht
+  // The input field stays typable; scroll it into view when the keyboard opens
   const input = $("#chatInput");
   if (input) input.addEventListener("focus", () =>
-    setTimeout(() => { try { input.scrollIntoView({ block: "nearest" }); } catch { /* egal */ } }, 250));
+    setTimeout(() => { try { input.scrollIntoView({ block: "nearest" }); } catch { /* ignore */ } }, 250));
 });

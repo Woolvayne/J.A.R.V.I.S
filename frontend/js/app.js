@@ -1,88 +1,96 @@
-/* J.A.R.V.I.S – Core (Vercel/Browser-Edition): Boot, Uhr, Geräte-Infos,
-   Wetter, News, Krypto, Orb. Kein eigenes Backend nötig:
-   - Vercel-Functions (/api/*) werden genutzt, wenn vorhanden (state.functions)
-   - Wetter/Krypto laufen direkt aus dem Browser (CORS-fähige Gratis-APIs)
-   - Optionales Pi-Backend nur noch für echte Pi-Systemwerte (Einstellungen) */
+/* J.A.R.V.I.S – Core (Vercel/browser edition): boot, clock, device info,
+   weather, news, crypto, orb. No local AI and no local backend:
+   - AI answers come exclusively from Groq (via /api/chat or your own key)
+   - Voice comes from the Pi Voicebox (Piper, British voice Alan) via
+     /api/tts, with the browser voice as fallback
+   - Vercel Functions (/api/*) are used when present (state.functions) */
 const $ = (s) => document.querySelector(s);
-const API = ""; // gleiche Herkunft (Vercel serviert Frontend + /api)
+const API = ""; // same origin (Vercel serves frontend + /api)
 
 const CITIES = {
+  london: { lat: 51.5074, lon: -0.1278, name: "London" },
+  giesen: { lat: 52.15, lon: 9.95, name: "Giesen" },
   berlin: { lat: 52.52, lon: 13.405, name: "Berlin" },
   hamburg: { lat: 53.55, lon: 9.99, name: "Hamburg" },
-  muenchen: { lat: 48.14, lon: 11.58, name: "München" },
-  koeln: { lat: 50.94, lon: 6.96, name: "Köln" },
-  giesen: { lat: 52.15, lon: 9.95, name: "Giesen" },
-  wien: { lat: 48.2, lon: 16.37, name: "Wien" },
-  zuerich: { lat: 47.37, lon: 8.54, name: "Zürich" },
+  muenchen: { lat: 48.14, lon: 11.58, name: "Munich" },
+  koeln: { lat: 50.94, lon: 6.96, name: "Cologne" },
+  wien: { lat: 48.2, lon: 16.37, name: "Vienna" },
+  zuerich: { lat: 47.37, lon: 8.54, name: "Zurich" },
 };
+
+/* One-time migration to v3 (English / Groq-only / British voice):
+   reset the old German voice and drop obsolete local-provider settings. */
+try {
+  if (localStorage.getItem("jarvis_v3") !== "1") {
+    localStorage.setItem("jarvis_tts_voice", "en_GB-alan-medium");
+    localStorage.removeItem("jarvis_llm_order");
+    localStorage.removeItem("jarvis_ollama_url");
+    localStorage.removeItem("jarvis_ollama_model");
+    localStorage.removeItem("jarvis_backend_url");
+    localStorage.setItem("jarvis_v3", "1");
+  }
+} catch { /* private mode etc. */ }
 
 const SESSION_START = Date.now();
 
 const state = {
-  city: localStorage.getItem("jarvis_city") || "berlin",
+  city: localStorage.getItem("jarvis_city") || "giesen",
   voice: localStorage.getItem("jarvis_voice") || "",
   ttsOn: localStorage.getItem("jarvis_tts") !== "0",
   autoSpeak: localStorage.getItem("jarvis_auto") !== "0",
-  // Vercel-Modus
-  functions: false,           // /api/health erreichbar (Vercel-Functions aktiv)
-  llmEnv: {},                 // welche Keys serverseitig gesetzt sind (nur bool)
-  // KI (Browser)
+  // Vercel mode
+  functions: false,           // /api/health reachable (Vercel Functions active)
+  llmEnv: {},                 // which keys exist server-side (booleans only)
+  // AI: Groq only. Your own browser key is a fallback; the server key wins.
   groqKey: localStorage.getItem("jarvis_groq_key") || "",
-  llmOrder: localStorage.getItem("jarvis_llm_order") || "groq,ollama,pollinations",
-  ollamaUrl: (localStorage.getItem("jarvis_ollama_url") || "http://localhost:11434").replace(/\/$/, ""),
-  ollamaModel: localStorage.getItem("jarvis_ollama_model") || "qwen2.5:0.5b",
-  ollamaOk: null,             // Cache der Ollama-Erreichbarkeit
-  ollamaOkAt: 0,
-  // Optionales Pi-Backend (Edge TTS + echte Pi-Werte), z. B. http://raspberrypi.local:8000
-  backendUrl: (localStorage.getItem("jarvis_backend_url") || "").replace(/\/$/, ""),
-  // Pi-"Voicebox" (Piper-TTS auf dem Pi, öffentlich per Cloudflare-Tunnel-URL,
-  // NICHT nur LAN): JARVIS holt dort WAV-Audio. Hat Vorrang vor Browser-Stimme.
+  groqServerOk: false,
+  // Pi "Voicebox" (Piper TTS on the Pi, public via Cloudflare tunnel):
+  // JARVIS fetches WAV audio from there. Beats the browser voice.
   ttsUrl: (localStorage.getItem("jarvis_tts_url") || "").replace(/\/$/, ""),
   ttsToken: localStorage.getItem("jarvis_tts_token") || "",
-  ttsVoice: localStorage.getItem("jarvis_tts_voice") || "de_DE-thorsten-medium",
-  // Voicebox zentral in Vercel eingetragen? (VOICEBOX_URL/TOKEN in der Env,
-  // /api/health meldet nur voicebox:true) – dann läuft TTS über /api/tts,
-  // ohne dass auf diesem Gerät URL/Token getippt werden müssen. Eine lokal
-  // in den Einstellungen gesetzte Voicebox (ttsUrl) hat weiter Vorrang.
+  ttsVoice: localStorage.getItem("jarvis_tts_voice") || "en_GB-alan-medium",
+  // Voicebox configured centrally in Vercel? (/api/health only reports
+  // voicebox:true) – then speech runs through /api/tts and nothing needs
+  // to be typed on this device. A local entry (ttsUrl) still wins.
   ttsServer: false,
-  // Anzeige
-  pi: localStorage.getItem("jarvis_pi") === "1",  // Sparmodus manuell (für Pi-Browser)
+  // Display
+  pi: localStorage.getItem("jarvis_pi") === "1",  // low-power mode
   systemMs: 7000,
 };
 
 /* ------------------------------------------------------------- Boot */
 async function boot() {
   const lines = [
-    "Initialisiere Kernsysteme …",
-    "Lade Sprachmodule (Browser-Stimme) …",
-    "Verbinde KI (Groq / Ollama lokal) …",
-    "Verbinde MCP-Server (z. B. Composio) & Plugins …",
-    "Alle Systeme einsatzbereit.",
+    "Initialising core systems …",
+    "Loading voice modules …",
+    "Connecting to Groq …",
+    "Connecting MCP servers and plugins …",
+    "All systems operational.",
   ];
   const fill = $("#bootFill"), line = $("#bootLine");
   for (let i = 0; i < lines.length; i++) {
     line.textContent = lines[i];
     fill.style.width = ((i + 1) / lines.length) * 100 + "%";
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 260));
   }
   $("#boot").classList.add("done");
   setTimeout(() => $("#boot").remove(), 800);
-  if (state.autoSpeak) speak("J.A.R.V.I.S online, Sir. Alle Systeme einsatzbereit. Wie kann ich helfen?");
+  if (state.autoSpeak) speak("J.A.R.V.I.S online, Sir. All systems operational. How may I help?");
 }
 
-/* ------------------------------------------------------------- Uhr */
+/* ------------------------------------------------------------- Clock */
 function tickClock() {
   const now = new Date();
-  $("#clock").textContent = now.toLocaleTimeString("de-DE");
-  $("#dateLine").textContent = now.toLocaleDateString("de-DE", {
+  $("#clock").textContent = now.toLocaleTimeString("en-GB");
+  $("#dateLine").textContent = now.toLocaleDateString("en-GB", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
   const zones = [
-    ["Berlin", "Europe/Berlin"], ["London", "Europe/London"],
-    ["New York", "America/New_York"], ["Tokio", "Asia/Tokyo"],
+    ["London", "Europe/London"], ["Berlin", "Europe/Berlin"],
+    ["New York", "America/New_York"], ["Tokyo", "Asia/Tokyo"],
   ];
   $("#worldClock").innerHTML = zones.map(([n, z]) => {
-    const t = new Date().toLocaleTimeString("de-DE", { timeZone: z, hour: "2-digit", minute: "2-digit" });
+    const t = new Date().toLocaleTimeString("en-GB", { timeZone: z, hour: "2-digit", minute: "2-digit" });
     return `<div class="kv"><span>${n}</span><b>${t}</b></div>`;
   }).join("");
 }
@@ -109,40 +117,17 @@ function _gaugeLabel(canvasId, text) {
   if (label && label.childNodes[0]) label.childNodes[0].textContent = text + " ";
 }
 
-let _deviceMode = null; // "pi" | "device"
 async function pollSystem() {
-  // 1) Optionales Pi-Backend gesetzt? Dann echte Pi-Werte anzeigen.
-  if (state.backendUrl) {
-    try {
-      const r = await fetch(state.backendUrl + "/api/system");
-      if (!r.ok) throw new Error("pi backend");
-      const d = await r.json();
-      if (_deviceMode !== "pi") {
-        _deviceMode = "pi";
-        _gaugeLabel("gCpu", "CPU"); _gaugeLabel("gRam", "RAM"); _gaugeLabel("gDisk", "Disk");
-        $("#cardSystem").querySelector("h2").lastChild.textContent = " System (Pi)";
-      }
-      drawGauge("gCpu", d.cpu_percent); $("#vCpu").textContent = Math.round(d.cpu_percent) + "%";
-      drawGauge("gRam", d.ram_percent); $("#vRam").textContent = d.ram_used_gb + "/" + d.ram_total_gb + " GB";
-      drawGauge("gDisk", d.disk_percent); $("#vDisk").textContent = d.disk_used_gb + "/" + d.disk_total_gb + " GB";
-      const h = Math.floor(d.uptime_s / 3600), m = Math.floor((d.uptime_s % 3600) / 60);
-      $("#vUptime").textContent = `${h} Std ${m} Min`;
-      $("#vPlatform").textContent = "Pi" + (d.cpu_temp_c ? ` · 🌡 ${d.cpu_temp_c}°C` : "");
-      return;
-    } catch { /* fällt auf Geräte-Infos zurück */ }
-  }
-  // 2) Browser-Geräteinfos (ohne Backend ehrlich das, was der Browser hergibt)
-  if (_deviceMode !== "device") {
-    _deviceMode = "device";
-    _gaugeLabel("gCpu", "KERNE"); _gaugeLabel("gRam", "RAM"); _gaugeLabel("gDisk", "SPEICHER");
-    $("#cardSystem").querySelector("h2").lastChild.textContent = " Gerät";
-  }
+  // Browser device info (honestly only what the browser exposes)
+  _gaugeLabel("gCpu", "CORES"); _gaugeLabel("gRam", "RAM"); _gaugeLabel("gDisk", "STORAGE");
+  const title = $("#cardSystem").querySelector("h2");
+  if (title && title.lastChild) title.lastChild.textContent = " System";
   const cores = navigator.hardwareConcurrency || 4;
   drawGauge("gCpu", Math.min(100, (cores / 8) * 100));
-  $("#vCpu").textContent = cores + " Kerne";
+  $("#vCpu").textContent = cores + " cores";
   if (navigator.deviceMemory) {
     drawGauge("gRam", Math.min(100, (navigator.deviceMemory / 16) * 100));
-    $("#vRam").textContent = "ca. " + navigator.deviceMemory + " GB";
+    $("#vRam").textContent = "approx. " + navigator.deviceMemory + " GB";
   } else if (performance.memory) {
     const pct = (performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) * 100;
     drawGauge("gRam", pct);
@@ -158,41 +143,41 @@ async function pollSystem() {
     } else { drawGauge("gDisk", 0); $("#vDisk").textContent = "n/a"; }
   } catch { drawGauge("gDisk", 0); $("#vDisk").textContent = "n/a"; }
   const up = Math.floor((Date.now() - SESSION_START) / 1000);
-  $("#vUptime").textContent = `${Math.floor(up / 3600)} Std ${Math.floor((up % 3600) / 60)} Min`;
+  $("#vUptime").textContent = `${Math.floor(up / 3600)} h ${Math.floor((up % 3600) / 60)} min`;
   $("#vPlatform").textContent = (navigator.userAgentData?.platform || navigator.platform || "Browser") +
     (navigator.onLine ? " · online" : " · offline");
   const pill = $("#pillBackend");
   if (pill) {
     pill.className = state.functions ? "pill ok" : "pill warn";
-    pill.textContent = state.functions ? "● Vercel online" : "● Nur Browser";
+    pill.textContent = state.functions ? "● Vercel online" : "● Browser only";
   }
 }
 
-/* ------------------------------------------------------------- Wetter */
-const WMO_LABELS = { 0: "Klar ☀️", 1: "Überwiegend klar", 2: "Teils bewölkt", 3: "Bedeckt",
-  45: "Nebel", 48: "Reifnebel", 51: "Leichter Niesel", 53: "Niesel", 55: "Niesel",
-  61: "Leichter Regen", 63: "Regen", 65: "Starker Regen", 66: "Gefr. Regen", 67: "Gefr. Regen",
-  71: "Leichter Schnee", 73: "Schnee", 75: "Starker Schnee", 80: "Schauer", 81: "Schauer",
-  82: "Starke Schauer", 95: "Gewitter", 96: "Gewitter + Hagel", 99: "Gewitter + Hagel" };
+/* ------------------------------------------------------------- Weather */
+const WMO_LABELS = { 0: "Clear", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+  45: "Fog", 48: "Rime fog", 51: "Light drizzle", 53: "Drizzle", 55: "Drizzle",
+  61: "Light rain", 63: "Rain", 65: "Heavy rain", 66: "Freezing rain", 67: "Freezing rain",
+  71: "Light snow", 73: "Snow", 75: "Heavy snow", 80: "Showers", 81: "Showers",
+  82: "Violent showers", 95: "Thunderstorm", 96: "Thunderstorm + hail", 99: "Thunderstorm + hail" };
 
 async function loadWeather() {
-  const c = CITIES[state.city] || CITIES.berlin;
+  const c = CITIES[state.city] || CITIES.giesen;
   const body = $("#weatherBody");
-  body.innerHTML = '<p class="muted">Lade Wetter …</p>';
+  body.innerHTML = '<p class="muted">Loading weather …</p>';
   try {
-    // Direkt über Open-Meteo aus dem Browser (CORS-fähig, kein Key, kein Backend)
-    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=Europe/Berlin`);
-    if (!r.ok) throw new Error("wetter");
+    // Directly from the browser via Open-Meteo (CORS-friendly, no key)
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=auto`);
+    if (!r.ok) throw new Error("weather");
     const cur = (await r.json()).current;
     body.innerHTML = `
       <div style="font-size:2.2rem;font-weight:800;color:#fff">${cur.temperature_2m}°C</div>
-      <div>${WMO_LABELS[cur.weather_code] || "Wettercode " + cur.weather_code} in ${c.name}</div>
-      <div class="kv"><span>Gefühlt</span><b>${cur.apparent_temperature}°C</b></div>
-      <div class="kv"><span>Luftfeuchte</span><b>${cur.relative_humidity_2m}%</b></div>
+      <div>${WMO_LABELS[cur.weather_code] || "Weather code " + cur.weather_code} in ${c.name}</div>
+      <div class="kv"><span>Feels like</span><b>${cur.apparent_temperature}°C</b></div>
+      <div class="kv"><span>Humidity</span><b>${cur.relative_humidity_2m}%</b></div>
       <div class="kv"><span>Wind</span><b>${cur.wind_speed_10m} km/h</b></div>
-      <p class="muted small">Quelle: Open-Meteo (kostenlos, direkt aus dem Browser)</p>`;
+      <p class="muted small">Source: Open-Meteo (free, direct from the browser)</p>`;
   } catch {
-    body.innerHTML = '<p class="muted">Wetter derzeit nicht erreichbar (Netzwerk?).</p>';
+    body.innerHTML = '<p class="muted">Weather unavailable right now (network?).</p>';
   }
 }
 
@@ -200,7 +185,7 @@ async function loadWeather() {
 async function loadNews() {
   const feed = $("#newsFeed").value;
   const body = $("#newsBody");
-  body.innerHTML = '<p class="muted">Lade News …</p>';
+  body.innerHTML = '<p class="muted">Loading news …</p>';
   try {
     let items;
     if (state.functions) {
@@ -209,10 +194,10 @@ async function loadNews() {
       items = (await r.json()).items;
     } else {
       const feeds = {
-        tagesschau: "https://www.tagesschau.de/xml/rss_2_0",
         bbc: "https://feeds.bbci.co.uk/news/rss.xml",
-        heise: "https://www.heise.de/rss/heise.rdf",
-        spiegel: "https://www.spiegel.de/schlagzeilen/tops/index.rss",
+        guardian: "https://www.theguardian.com/world/rss",
+        npr: "https://feeds.npr.org/1001/rss.xml",
+        sky: "https://feeds.skynews.com/feeds/rss/home.xml",
       };
       const r = await fetch(feeds[feed]);
       const xml = await r.text();
@@ -225,30 +210,30 @@ async function loadNews() {
     }
     body.innerHTML = items.map((n) =>
       `<div class="news-item"><a href="${n.link}" target="_blank" rel="noopener">${escapeHtml(n.title)}</a><small>${escapeHtml(n.date)}</small></div>`
-    ).join("") || '<p class="muted">Keine Einträge.</p>';
+    ).join("") || '<p class="muted">No entries.</p>';
   } catch {
-    body.innerHTML = '<p class="muted">News-Feed nicht erreichbar. Auf Vercel übernimmt /api/news den Abruf.</p>';
+    body.innerHTML = '<p class="muted">News feed unreachable. On Vercel, /api/news fetches it for you.</p>';
   }
 }
 
-/* ------------------------------------------------------------- Krypto */
+/* ------------------------------------------------------------- Crypto */
 async function loadCrypto() {
   const body = $("#cryptoBody");
   try {
-    // CoinGecko direkt aus dem Browser (CORS-fähig, kein Key)
+    // CoinGecko directly from the browser (CORS-friendly, no key)
     const r = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=eur&include_24hr_change=true");
     if (!r.ok) throw new Error("coingecko");
     const d = await r.json();
-    const rows = [["bitcoin", "Bitcoin ₿"], ["ethereum", "Ethereum Ξ"], ["solana", "Solana ◎"]];
+    const rows = [["bitcoin", "Bitcoin"], ["ethereum", "Ethereum"], ["solana", "Solana"]];
     body.innerHTML = rows.map(([id, name]) => {
       const v = d[id];
       if (!v) return "";
       const chg = v.eur_24h_change;
       const cls = chg >= 0 ? "up" : "down";
-      return `<div class="crypto-row"><span>${name}</span><b>${Number(v.eur).toLocaleString("de-DE")} € <span class="${cls}">${chg >= 0 ? "▲" : "▼"} ${Math.abs(chg).toFixed(1)}%</span></b></div>`;
-    }).join("") + '<p class="muted small">Quelle: CoinGecko (kostenlos, direkt)</p>';
+      return `<div class="crypto-row"><span>${name}</span><b>${Number(v.eur).toLocaleString("en-GB")} € <span class="${cls}">${chg >= 0 ? "+" : "−"}${Math.abs(chg).toFixed(1)}%</span></b></div>`;
+    }).join("") + '<p class="muted small">Source: CoinGecko (free, direct)</p>';
   } catch {
-    body.innerHTML = '<p class="muted">Krypto-Kurse nicht erreichbar (Netzwerk oder Gratis-Ratenlimit).</p>';
+    body.innerHTML = '<p class="muted">Crypto prices unreachable (network or free rate limit).</p>';
   }
 }
 
@@ -256,9 +241,9 @@ async function loadCrypto() {
 const orb = $("#orb"), octx = orb.getContext("2d");
 let orbMode = "idle", orbT = 0, orbFrame = 0;
 function drawOrb() {
-  if (document.hidden) { requestAnimationFrame(drawOrb); return; } // Safari/iPad: Akku sparen, wenn Tab unsichtbar
+  if (document.hidden) { requestAnimationFrame(drawOrb); return; } // save battery while tab hidden
   orbFrame++;
-  if (state.pi && orbFrame % 2 === 1) { requestAnimationFrame(drawOrb); return; } // Sparmodus: ~30 FPS
+  if (state.pi && orbFrame % 2 === 1) { requestAnimationFrame(drawOrb); return; } // low-power: ~30 FPS
   orbT += 0.02;
   const w = orb.width, h = orb.height, cx = w / 2, cy = h / 2;
   octx.clearRect(0, 0, w, h);
@@ -294,10 +279,10 @@ function setOrb(mode, text) {
   $("#wave").classList.toggle("on", mode === "speak" || mode === "listen");
 }
 
-/* ------------------------------------------- Vercel-Erkennung + MCP-Pille */
-// Ist der Composio-Connect-Key in der Vercel-Env hinterlegt, legt JARVIS den
-// MCP-Server automatisch an (Header bleibt leer – /api/mcp trägt den Key
-// serverseitig ein). Ein Platzhalter-Key im Browser wird dabei bereinigt.
+/* ------------------------------------------- Vercel detection + MCP pill */
+// If the Composio Connect key exists server-side, JARVIS creates that MCP
+// server automatically (header stays empty – /api/mcp injects the key).
+// A placeholder key stored in the browser is cleaned up in the process.
 function ensureComposioConnect(health) {
   try {
     if (!health || !health.composio_connect || typeof Mcp === "undefined") return;
@@ -309,7 +294,7 @@ function ensureComposioConnect(health) {
       if (found.url !== url) { found.url = url; changed = true; }
       if (found.via !== "proxy") { found.via = "proxy"; changed = true; }
       const vals = Object.values(found.headers || {}).map(String);
-      if (!vals.length || vals.some((v) => v.includes("DEIN"))) {
+      if (!vals.length || vals.some((v) => v.includes("YOUR_") || v.includes("DEIN"))) {
         if (vals.length) { found.headers = {}; changed = true; }
       }
     } else {
@@ -317,20 +302,21 @@ function ensureComposioConnect(health) {
       changed = true;
     }
     if (changed) Mcp.saveServers(list);
-  } catch { /* MCP bleibt manuell konfigurierbar */ }
+  } catch { /* MCP stays manually configurable */ }
 }
 
 async function fetchHealth() {
   if (state.pi) { document.body.classList.add("pi"); }
   try {
-    const r = await fetch(API + "/api/health");
+    const r = await fetch(API + "/api/health", { cache: "no-store" });
     if (!r.ok) throw new Error("no functions");
     const d = await r.json();
     state.functions = true;
     state.llmEnv = d.llm_env || {};
+    state.groqServerOk = Boolean(d.llm_env && d.llm_env.groq);
     state.ttsServer = Boolean(d.voicebox);
     ensureComposioConnect(d);
-  } catch { /* reiner Browser-Modus (statisch) */ }
+  } catch { /* static browser-only mode */ }
 }
 
 async function loadMcpPill() {
@@ -338,11 +324,11 @@ async function loadMcpPill() {
   if (!pill || typeof Mcp === "undefined") return;
   try {
     const d = await Mcp.status();
-    pill.textContent = `● MCP: ${d.tool_count} Tools`;
+    pill.textContent = `● MCP: ${d.tool_count} tools`;
     pill.className = d.tool_count ? "pill ok" : "pill warn";
     pill.title = d.servers.length
-      ? d.servers.map((s) => `${s.name}: ${s.enabled ? s.tools + " Tools" : "inaktiv"}`).join(" · ")
-      : "Keine MCP-Server – im MCP-Plugin (🔌) hinzufügen, z. B. Composio";
+      ? d.servers.map((s) => `${s.name}: ${s.enabled ? s.tools + " tools" : "off"}`).join(" · ")
+      : "No MCP servers – add one in the MCP plugin, e.g. Composio";
   } catch { pill.textContent = "● MCP: ?"; pill.className = "pill warn"; }
 }
 
@@ -350,6 +336,14 @@ async function loadMcpPill() {
 document.addEventListener("DOMContentLoaded", async () => {
   tickClock(); setInterval(tickClock, 5000);
   await fetchHealth();
+  const llmPill = $("#pillLLM");
+  if (llmPill) {
+    llmPill.textContent = "● AI: Groq" + (state.groqServerOk || state.groqKey ? "" : " (no key)");
+    llmPill.className = state.groqServerOk || state.groqKey ? "pill ok" : "pill warn";
+  }
+  if (typeof voicePill === "function") {
+    voicePill(!state.ttsOn ? "off" : (state.ttsUrl || state.ttsServer) ? "pi" : "browser");
+  }
   drawOrb();
   await pollSystem(); setInterval(pollSystem, state.systemMs);
   loadMcpPill();

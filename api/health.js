@@ -1,9 +1,9 @@
-// J.A.R.V.I.S – Vercel Function: Status (keine Secrets, nur "ist ein Key gesetzt?")
+// J.A.R.V.I.S – Vercel Function: status (no secrets, only "is a key set?")
 export default function handler(req, res) {
   res.status(200).json({
     ok: true,
     runtime: "vercel",
-    version: "2.0.0-vercel",
+    version: "3.0.0-vercel",
     pi_mode: false,
     llm_env: {
       groq: Boolean(process.env.GROQ_API_KEY),
@@ -13,13 +13,13 @@ export default function handler(req, res) {
       mistral: Boolean(process.env.MISTRAL_API_KEY),
     },
     mcp_proxy: true,
-    // Nur "ist gesetzt?" – der Key selbst wird nie ausgegeben. Ist er da,
-    // trägt /api/mcp ihn bei connect.composio.dev serverseitig ein und das
-    // Dashboard legt den MCP-Server automatisch (ohne Key im Browser) an.
+    // Only "is set?" – the key itself is never printed. When present, /api/mcp
+    // injects it server-side for connect.composio.dev and the dashboard
+    // creates the MCP server automatically (no key in the browser).
     composio_connect: Boolean(process.env.COMPOSIO_CONSUMER_KEY),
-    // Nur "ist gesetzt?" + der (ungeheime) Stimmenname – URL/Token der
-    // Pi-Voicebox bleiben serverseitig; der Browser spricht dann /api/tts.
+    // Only "is set?" plus the (non-secret) voice name – the Pi voicebox's
+    // URL/token stay server-side; the browser talks to /api/tts.
     voicebox: Boolean(process.env.VOICEBOX_URL),
-    voicebox_voice: process.env.VOICEBOX_VOICE || "de_DE-thorsten-medium",
+    voicebox_voice: process.env.VOICEBOX_VOICE || "en_GB-alan-medium",
   });
 }

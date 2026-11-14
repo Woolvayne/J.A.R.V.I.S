@@ -2,11 +2,12 @@
 
 A minimal voice assistant HUD, styled after a certain film butler: an
 arc-reactor orb you tap to speak, a British voice from your own
-Raspberry Pi, an AI brain by **Groq only**, and real tools via the
+Raspberry Pi, an AI brain by **Groq** (with a tiny fallback brain on
+the Pi itself), and real tools via the
 **Model Context Protocol (MCP)** — e.g. Composio with Gmail, Google
 Drive and Sheets. Everything runs as a static page on Vercel plus a
 few tiny serverless helper functions. No backend to host, nothing
-local to install (except the optional Pi voice), all free tiers.
+local to install (except the optional Pi services), all free tiers.
 
 Optimised for Safari on iPad and iPhone, usable on any modern browser.
 
@@ -24,9 +25,11 @@ microphone, and talk. Typing works too.
 - **Tap the orb and talk** – speech recognition in British English;
   replies are read back in a British Piper voice from the Pi
   (`en_GB-alan-medium`, the closest legal voice to the films).
-- **Groq only** – every AI answer comes from Groq (Llama 3.3 70B, free
-  tier). No local model, no offline demo fallback: if Groq cannot be
-  reached, JARVIS says so instead of guessing.
+- **Groq first, Pi fallback** – every AI answer comes from Groq
+  (`openai/gpt-oss-120b`, free tier). If Groq is unreachable, a tiny
+  Ollama model on your own Raspberry Pi takes over automatically —
+  MCP tools included — and the answer is labelled "via Pi fallback".
+  If both are down, JARVIS says so instead of guessing. See `AIBOX.md`.
 - **Real MCP servers in the browser** – Composio and any remote MCP
   server (Streamable HTTP); Groq calls their tools automatically
   (function calling loop, up to 6 rounds for email tasks).
@@ -49,6 +52,8 @@ microphone, and talk. Typing works too.
    `vercel.json`).
 2. Optional but recommended, in **Settings → Environment Variables**:
    - `GROQ_API_KEY` – free key from https://console.groq.com/keys
+   - `PI_AI_URL`, `PI_AI_TOKEN`, `PI_AI_MODEL=qwen3:0.6b` – the Pi
+     fallback brain (see `AIBOX.md`)
    - `COMPOSIO_CONSUMER_KEY` – Composio Connect `ck_…` key (enables
      one-tap Gmail/Drive/Sheets tools)
    - `VOICEBOX_URL`, `VOICEBOX_TOKEN`, `VOICEBOX_VOICE=en_GB-alan-medium`
@@ -97,7 +102,7 @@ Note: a browser cannot start local stdio MCP servers (`npx …`,
 ```
 Browser (iPad / Safari)                Vercel                    External
 ┌───────────────────────┐        ┌──────────────────┐
-│ static HUD (frontend/) │──AI──▶ │ /api/chat        │──▶ Groq (only AI)
+│ static HUD (frontend/) │──AI──▶ │ /api/chat        │──▶ Groq (Pi fallback)
 │ MCP client in JS       │──MCP─▶ │ /api/mcp (proxy) │──▶ Composio / MCP servers
 │ speech recognition     │──TTS─▶ │ /api/tts (proxy) │──▶ Pi Voicebox (Piper)
 │ (Web Speech API)       │──news▶ │ /api/news (RSS)  │──▶ BBC, Guardian, …
@@ -118,6 +123,7 @@ Browser (iPad / Safari)                Vercel                    External
 | `frontend/js/plugins.js` | The 17 plugins |
 | `api/` | Tiny Vercel Functions: `chat`, `mcp`, `tts`, `health`, `news` |
 | `voicebox/` + `install-voicebox-pi.sh` | Piper TTS server for the Pi |
+| `aibox/` + `install-ai-pi.sh` | Ollama fallback brain for the Pi (`AIBOX.md`) |
 | `MCP.md` / `PLUGINS.md` / `VOICEBOX.md` | Guides |
 
 ## Privacy & security

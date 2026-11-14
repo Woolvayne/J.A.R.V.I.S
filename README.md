@@ -29,7 +29,11 @@ microphone, and talk. Typing works too.
   reached, JARVIS says so instead of guessing.
 - **Real MCP servers in the browser** – Composio and any remote MCP
   server (Streamable HTTP); Groq calls their tools automatically
-  (function calling loop, up to 4 rounds).
+  (function calling loop, up to 6 rounds for email tasks).
+- **Email butler** – ask *“Show my latest emails”* and JARVIS fetches
+  them via the Gmail tools, shows a numbered list and reads it aloud;
+  *“Read the first one”* reads that message in full. Asking about mail
+  never just opens a settings panel.
 - **17 plugins** – weather, news, crypto, notes, tasks, calculator,
   timer, stopwatch, world clock, search, Wikipedia, GitHub, image
   generation, translator, pomodoro and more.
@@ -83,6 +87,7 @@ Note: a browser cannot start local stdio MCP servers (`npx …`,
 - “Good morning, JARVIS.”
 - “What’s the weather in [Your City]?”
 - “Show my latest emails.” *(with Composio connected)*
+- “Read the first one.” *(reads that email in full and aloud)*
 - “Set a timer for 5 minutes.”
 - “Open the calculator.”
 - “What can you do?”

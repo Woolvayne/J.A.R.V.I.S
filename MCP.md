@@ -31,8 +31,12 @@ then uses those accounts’ tools — no passwords in JARVIS.
 5. In JARVIS: **MCP plugin → “+ Composio template”** → paste URL, set
    the header to `{"x-api-key": "ak_…"}`, route **Vercel proxy** →
    **“Save & connect”**. The status line shows the tool count.
-6. Ask in chat: *“Show my latest emails”* — the reply is marked
-   e.g. `via groq · composio__GMAIL_…`.
+6. Ask in chat: *“Show my latest emails”* — JARVIS fetches them with
+   the Gmail tools, shows a numbered list and reads it aloud; the
+   reply is marked e.g. `via composio__GMAIL_FETCH_EMAILS`. Then say
+   *“Read the first one”* and he reads that message in full. (Asking
+   about emails never opens this panel on its own — only when no
+   account is connected at all, and then he says why.)
 
 Tip: test single tools in the MCP plugin under “Test a tool”.
 

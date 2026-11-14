@@ -6,7 +6,7 @@
 /* Note: $, API, CITIES, state, Mcp are defined in app.js/mcp.js. */
 
 const history = [];
-const SYS_PROMPT = "You are J.A.R.V.I.S (Just A Rather Very Intelligent System), a polite, precise British AI butler. Always answer in British English, briefly and clearly, in at most 3-4 sentences. Address the user as 'Sir' where fitting. No emojis, no markdown tables. If tools are available, use them for current or factual information instead of guessing.";
+const SYS_PROMPT = "You are J.A.R.V.I.S (Just A Rather Very Intelligent System), a polite, precise British AI butler. Always answer in British English, briefly and clearly, in at most 3-4 sentences. Address the user as 'Sir' where fitting. No emojis, no markdown tables. If tools are available, use them for current or factual information instead of guessing. If the user asks about emails and email tools are available, always fetch real emails with the tools, list sender, subject and time, and offer to read one in full – never invent emails. When the user refers to a numbered item from a list you just gave (e.g. 'read the second one'), act on that exact item with the tools.";
 
 function addMsg(who, text, provider) {
   const log = $("#chatLog");
@@ -24,7 +24,7 @@ function escapeHtml(s) {
 
 function initChat() {
   const nPlugins = typeof PLUGINS !== "undefined" ? PLUGINS.length : 20;
-  addMsg("jarvis", `Good day, Sir. I am J.A.R.V.I.S – running entirely on Vercel: Groq is my only AI, my voice is the British Pi voice, and ${nPlugins} plugins plus real MCP servers (for example Composio) are at your disposal. Tap the orb to speak, or type a command below.`, "system");
+  addMsg("jarvis", `Good day, Sir. I am J.A.R.V.I.S – running entirely on Vercel: Groq is my only AI, my voice is the British Pi voice, and ${nPlugins} plugins plus real MCP servers (for example Composio) are at your disposal. Tap the orb to speak, or type a command below. Try "Show my latest emails" – I will fetch them and read them to you.`, "system");
   $("#chatForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const v = $("#chatInput").value.trim();
@@ -38,7 +38,22 @@ async function handleUserText(text) {
   addMsg("user", text);
   history.push({ role: "user", content: text });
 
-  // 1) Deterministic UI commands (timer, weather panel, calculator …).
+  // 1) Emails first: asking about mail must fetch and read real emails via
+  //    MCP – never just open the MCP plugin (that was the old bug: the
+  //    words "email"/"gmail" were UI shortcuts for the panel).
+  setOrb("speak", "Fetching your emails …");
+  let email = null;
+  try { email = await handleEmailIntent(text); } catch { email = null; }
+  if (email) {
+    history.push({ role: "assistant", content: email.text });
+    addMsg("jarvis", email.text, email.via || "Gmail via MCP");
+    speak(email.speakText || email.text);
+    setOrb("idle", "Ready, Sir.");
+    return;
+  }
+  setOrb("idle", "Ready, Sir.");
+
+  // 2) Deterministic UI commands (timer, weather panel, calculator …).
   //    These are interface actions, not AI – every real answer is Groq.
   const local = runLocalCommand(text);
   if (local !== null) {
@@ -48,7 +63,7 @@ async function handleUserText(text) {
     return;
   }
 
-  // 2) Groq (with MCP tool loop)
+  // 3) Groq (with MCP tool loop)
   setOrb("speak", "Thinking …");
   try {
     const data = await llmReply();
@@ -71,8 +86,10 @@ async function handleUserText(text) {
 
 /* ------------------------------------------------------- Groq (only) */
 function chatMessages() {
-  return [{ role: "system", content: SYS_PROMPT }, ...history.slice(-8)];
+  return [{ role: "system", content: SYS_PROMPT }, ...history.slice(-12)];
 }
+
+const EMAIL_COACH = "The user is asking about their emails. MCP email tools are available to you (Gmail via Composio, possibly behind COMPOSIO_SEARCH_TOOLS / COMPOSIO_MULTI_EXECUTE_TOOL meta-tools). You MUST use the tools to fetch real emails before answering – never claim you cannot access the inbox and never invent senders, subjects or content. If a tool has to be found first, search for a Gmail fetch/list tool and execute it (user 'me', at most 5 results, inbox). Then present a short numbered list: number, sender, subject, time. End by offering to read one in full. If the user refers to a numbered email from your previous list, fetch that exact message with the tools and read it.";
 
 async function getMcpTools() {
   try { return typeof Mcp !== "undefined" ? await Mcp.openaiTools() : []; }
@@ -124,11 +141,11 @@ async function groqOnce(msgs, tools) {
   throw new Error(errors.filter(Boolean).join(" | ") || "No Groq key: set GROQ_API_KEY in Vercel or add your key in Settings");
 }
 
-/* Generic tool loop: the model may call MCP tools (max. 3 rounds) */
-async function toolLoop(callOnce, msgs, tools) {
+/* Generic tool loop: the model may call MCP tools (a few rounds) */
+async function toolLoop(callOnce, msgs, tools, maxRounds = 4) {
   const used = [];
   const m = [...msgs];
-  for (let round = 0; round < 4; round++) {
+  for (let round = 0; round < maxRounds; round++) {
     const msg = await callOnce(m, tools);
     const calls = msg.tool_calls || [];
     if (!calls.length || !tools.length) return { text: (msg.content || "").trim(), tools_used: used };
@@ -147,9 +164,250 @@ async function toolLoop(callOnce, msgs, tools) {
 
 async function llmReply() {
   const tools = await getMcpTools();
-  const out = await toolLoop(groqOnce, chatMessages(), tools);
+  const msgs = chatMessages();
+  const lastUser = [...history].reverse().find((x) => x.role === "user");
+  const emailCtx = Boolean(lastUser && EMAIL_WORD.test(lastUser.content));
+  if (emailCtx) msgs.push({ role: "system", content: EMAIL_COACH });
+  const out = await toolLoop(groqOnce, msgs, tools, emailCtx ? 6 : 4);
   if (!out.text) throw new Error("Groq returned an empty answer");
   return { ...out, provider: lastGroqRoute };
+}
+
+/* ------------------------------------------------- Email (Gmail via MCP) */
+/* Asking about emails must NEVER just open the MCP plugin: JARVIS fetches
+ * them with the connected Gmail tools, lists them, reads them aloud, and
+ * "read the first one" fetches that message in full. Only when no MCP
+ * tools are connected at all does he open the panel – with an explanation. */
+let lastEmailList = [];   // [{id, threadId, sender, subject, date, snippet}]
+
+const EMAIL_WORD = /\b(e-?mails?|gmail|inbox|unread)\b/i;
+const MCP_ERR = /^(MCP tool reports an error|Unknown MCP tool|MCP call failed|MCP server)/i;
+const ORDINALS = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10 };
+
+async function _mcpTools() {
+  try { return typeof Mcp !== "undefined" ? await Mcp.listTools(false) : []; }
+  catch { return []; }
+}
+
+/* Find the Gmail list/read tools among all MCP tools (fuzzy on purpose:
+ * direct Gmail tools on classic Composio servers; router meta-tools are
+ * deliberately NOT matched here – Groq handles those with coaching). */
+function _pickGmailTools(tools) {
+  const g = (tools || []).filter((x) => /gmail/i.test(x.tool || "") || /gmail/i.test(x.full || ""));
+  const name = (x) => String(x.tool || "");
+  const list =
+    g.find((x) => /FETCH_EMAILS|LIST_EMAILS|GET_EMAILS|FETCH_MESSAGES|LIST_MESSAGES|SEARCH_EMAILS/i.test(name(x))) ||
+    g.find((x) => /(FETCH|LIST|SEARCH)/i.test(name(x)) && !/(MESSAGE_BY|BY_ID|LABELS?|SEND|DRAFT)/i.test(name(x))) ||
+    null;
+  const read =
+    g.find((x) => /MESSAGE_BY|GET_MESSAGE|FETCH_MESSAGE|READ_EMAIL|GET_EMAIL/i.test(name(x)) && !/(EMAILS|MESSAGES)$/i.test(name(x).trim())) ||
+    null;
+  return { list, read, gmailCount: g.length };
+}
+
+/* Only pass arguments the tool's schema actually declares. */
+function _buildListArgs(schema, userText) {
+  const props = (schema && schema.properties) || {};
+  const args = {};
+  const unread = /\bunread\b/i.test(userText || "");
+  for (const k of Object.keys(props)) {
+    const lk = k.toLowerCase();
+    if (/max_?results|limit|count|page_?size/.test(lk)) args[k] = 5;
+    else if (lk === "query" || lk === "q" || lk === "search_query" || lk === "filter") args[k] = unread ? "in:inbox is:unread" : "in:inbox";
+    else if (/label/.test(lk) && props[k].type === "array") args[k] = unread ? ["INBOX", "UNREAD"] : ["INBOX"];
+    else if (lk === "user_id" || lk === "userid") args[k] = "me";
+  }
+  return args;
+}
+
+function _buildReadArgs(schema, item) {
+  const props = (schema && schema.properties) || {};
+  const args = {};
+  for (const k of Object.keys(props)) {
+    const lk = k.toLowerCase();
+    if (/message/.test(lk) && /id/.test(lk) && item.id) args[k] = item.id;
+    else if (lk === "id" && item.id) args[k] = item.id;
+    else if (/thread/.test(lk) && item.threadId) args[k] = item.threadId;
+    else if ((lk === "user_id" || lk === "userid")) args[k] = "me";
+    else if (lk === "format") args[k] = "full";
+  }
+  return args;
+}
+
+/* ---- tolerant parsing of whatever the mail tool returns ---- */
+function _jsonFromText(text) {
+  const t = String(text || "");
+  const start = t.search(/[\[{]/);
+  if (start < 0) return null;
+  try { return JSON.parse(t.slice(start)); } catch { return null; }
+}
+function _strField(obj, keys) {
+  for (const k of keys) {
+    const v = obj ? obj[k] : null;
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+  return "";
+}
+function _headerVal(obj, name) {
+  const hs = obj && obj.payload && Array.isArray(obj.payload.headers) ? obj.payload.headers : [];
+  const h = hs.find((x) => String(x.name || "").toLowerCase() === name);
+  return h ? String(h.value || "") : "";
+}
+function _emailFromRaw(o) {
+  if (!o || typeof o !== "object") return null;
+  const pv = o.preview && typeof o.preview === "object" ? o.preview : {};
+  const subject = _strField(o, ["subject", "title"]) || _strField(pv, ["subject", "title"]) || _headerVal(o, "subject") || "(no subject)";
+  let sender = _strField(o, ["sender", "from", "fromAddress", "from_email", "author"]) || _strField(pv, ["sender", "from"]) || _headerVal(o, "from") || "Unknown sender";
+  sender = sender.replace(/<[^>]*>/g, "").replace(/^"+|"+$/g, "").trim() || "Unknown sender";
+  let date = _strField(o, ["date", "receivedAt", "received_at", "time"]) || _strField(pv, ["date"]) || _headerVal(o, "date");
+  const epoch = _strField(o, ["internalDate", "timestamp", "epoch"]);
+  const fmt = (ms) => new Date(Number(ms)).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  if (!date && /^\d{12,}$/.test(epoch)) date = fmt(epoch);
+  else if (/^\d{12,}$/.test(date)) date = fmt(date);
+  const snippetRaw = _strField(o, ["snippet", "previewText", "shortBody"]) || _strField(pv, ["body", "text", "snippet"]) || _strField(o, ["messageText"]);
+  const snippet = snippetRaw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 140);
+  return {
+    id: _strField(o, ["messageId", "message_id", "id"]),
+    threadId: _strField(o, ["threadId", "thread_id"]),
+    sender, subject, date, snippet,
+  };
+}
+function _looksEmail(o) {
+  if (!o || typeof o !== "object" || Array.isArray(o)) return false;
+  const keys = Object.keys(o).join(" ").toLowerCase();
+  return /(subject|sender|messageid|threadid|preview|snippet)/.test(keys);
+}
+function _collectEmails(node, out, depth) {
+  if (!node || depth > 6 || out.length >= 25) return;
+  if (Array.isArray(node)) {
+    const objs = node.filter((x) => x && typeof x === "object");
+    if (objs.length && objs.filter(_looksEmail).length >= Math.max(1, Math.ceil(objs.length / 2))) {
+      for (const o of objs) { const e = _emailFromRaw(o); if (e) out.push(e); }
+      return;
+    }
+    for (const x of node) _collectEmails(x, out, depth + 1);
+    return;
+  }
+  if (typeof node === "object") for (const v of Object.values(node)) _collectEmails(v, out, depth + 1);
+}
+function extractEmails(rawText) {
+  const data = _jsonFromText(rawText);
+  if (data == null) return [];
+  const out = [];
+  _collectEmails(data, out, 0);
+  return out.slice(0, 8);
+}
+function extractEmailBody(rawText) {
+  const data = _jsonFromText(rawText);
+  let best = "";
+  const visit = (node, depth) => {
+    if (!node || depth > 6 || typeof node !== "object") return;
+    for (const [k, v] of Object.entries(node)) {
+      if (typeof v === "string" && /(messagetext|body|text|content|plain)/i.test(k) && v.length > best.length) best = v;
+      else visit(v, depth + 1);
+    }
+  };
+  if (data != null) visit(data, 0);
+  const src = best || String(rawText || "");
+  return src.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+}
+
+function _readIndex(t) {
+  const m = t.match(/\b(?:read|open|play)\b[^.!?]*?\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|latest|newest|last|\d{1,2})(?:st|nd|rd|th)?\b/);
+  if (m) {
+    if (/latest|newest|last/.test(m[1])) return 0;
+    const n = ORDINALS[m[1]] || parseInt(m[1], 10);
+    return Number.isFinite(n) ? n - 1 : -1;
+  }
+  if (/\b(read|open)\s+(it|that|this)\b/.test(t)) return lastEmailList.length === 1 ? 0 : -1;
+  return -1;
+}
+
+async function _groqSummarize(rawText, instruction) {
+  const msgs = [
+    { role: "system", content: SYS_PROMPT },
+    { role: "user", content: instruction + "\n\nTool output:\n" + String(rawText).slice(0, 6000) },
+  ];
+  const msg = await groqOnce(msgs, []);
+  const text = (msg.content || "").trim();
+  if (!text) throw new Error("empty summary");
+  return { text, via: lastGroqRoute + " · summary" };
+}
+
+async function _readEmailItem(item, idx) {
+  const picks = _pickGmailTools(await _mcpTools());
+  const head = `Email ${idx + 1} from ${item.sender} – ${item.subject}`;
+  if (picks.read && item.id) {
+    const rawOut = await Mcp.callTool(picks.read.full, _buildReadArgs(picks.read.schema, item));
+    if (!MCP_ERR.test(rawOut)) {
+      const body = extractEmailBody(rawOut);
+      if (body) {
+        return { text: `${head}:\n${body.slice(0, 3500)}`, speakText: `${head}. ${body.slice(0, 850)}`, via: picks.read.full };
+      }
+    }
+  }
+  // No direct read tool (or it failed): hand over to Groq with exact context.
+  const lastUser = history[history.length - 1];
+  if (lastUser && lastUser.role === "user") {
+    lastUser.content += `\n(Context: this refers to email number ${idx + 1} from the list you just presented – from ${item.sender}, subject "${item.subject}"${item.id ? ", message id " + item.id : ""}. Use the available email tools to fetch the full message and read it out.)`;
+  }
+  return null;
+}
+
+/* Returns {text, speakText?, via?} – or null when Groq should take over. */
+async function handleEmailIntent(raw) {
+  const t = raw.toLowerCase();
+  const mentionsEmail = EMAIL_WORD.test(t);
+
+  // "Read the first/second/latest one" – against the last presented list
+  const readIdx = _readIndex(t);
+  if (readIdx >= 0 && (lastEmailList.length || mentionsEmail)) {
+    if (!lastEmailList.length) {
+      return { text: "I have not listed any emails yet, Sir. Ask me to show your latest emails first – afterwards simply say 'read the first one'." };
+    }
+    const item = lastEmailList[readIdx];
+    if (!item) {
+      return { text: `The list only has ${lastEmailList.length} email${lastEmailList.length === 1 ? "" : "s"}, Sir – please pick one of those numbers.` };
+    }
+    return await _readEmailItem(item, readIdx);
+  }
+
+  // Sending/composing goes to Groq + tools (it can use the send tool).
+  if (mentionsEmail && /\b(send|write|compose|draft|reply|forward)\b/.test(t)) return null;
+
+  const wantsList = mentionsEmail &&
+    /(show|list|read|check|open|latest|recent|new|unread|my|any|what|get|fetch|see|do i have)/.test(t);
+  if (!wantsList) return null;
+
+  const tools = await _mcpTools();
+  const picks = _pickGmailTools(tools);
+  if (!picks.list) {
+    if (!tools.length) {
+      openPlugin("mcp");
+      return { text: "No email account is connected yet, Sir – so I cannot fetch your emails. I have opened the MCP panel: connect Composio (Gmail) there, then simply ask 'Show my latest emails' again and I will read them to you." };
+    }
+    return null; // tools exist but no direct Gmail list tool (router): Groq + coaching
+  }
+
+  const rawOut = await Mcp.callTool(picks.list.full, _buildListArgs(picks.list.schema, raw));
+  if (MCP_ERR.test(rawOut)) {
+    return { text: "The Gmail tool reported a problem, Sir: " + rawOut.slice(0, 300) };
+  }
+  const items = extractEmails(rawOut);
+  if (!items.length) {
+    // Unstructured answer – let Groq turn the raw tool output into the list.
+    return await _groqSummarize(rawOut,
+      "List the emails from this tool output as a short numbered list (number, sender, subject, time). If there are none, say so briefly. Then offer to read one in full.");
+  }
+  lastEmailList = items;
+  const lines = items.map((e, i) => `${i + 1}. ${e.sender} – ${e.subject}${e.date ? " (" + e.date + ")" : ""}`);
+  const spoken = items.map((e, i) => `${i + 1}. From ${e.sender}: ${e.subject}.`);
+  return {
+    text: `Here are your latest emails, Sir:\n${lines.join("\n")}\nSay "read the first one" and I will read it to you in full.`,
+    speakText: `Here are your latest emails, Sir. ${spoken.join(" ")} Shall I read one in full?`,
+    via: picks.list.full,
+  };
 }
 
 function timeoutSignal(ms) {
@@ -197,8 +455,9 @@ function runLocalCommand(raw) {
     github: "github", crypto: "crypto", bitcoin: "crypto", news: "news",
     "world clock": "worldclock", light: "smart", lights: "smart", smart: "smart",
     pomodoro: "pomodoro", stopwatch: "stopwatch",
-    mcp: "mcp", composio: "mcp", connector: "mcp", tools: "mcp",
-    gmail: "mcp", mail: "mcp", email: "mcp", emails: "mcp",
+    // Only explicit MCP requests open the panel. Email questions are
+    // handled above (handleEmailIntent) and must never land here.
+    mcp: "mcp", composio: "mcp", connector: "mcp",
   };
   for (const [kw, id] of Object.entries(pluginCmds)) {
     if (t.includes(kw) && id) { openPlugin(id); return `The ${kw} plugin is open, Sir.`; }
@@ -212,7 +471,7 @@ function runLocalCommand(raw) {
     return jokes[Math.floor(Math.random() * jokes.length)];
   }
   if (/what can you do|abilities|help|commands/.test(t)) {
-    return "I can show weather, run timers, a stopwatch and pomodoro, calculate, search the web, read Wikipedia and the news, track crypto, query GitHub, generate images, translate, and keep notes and tasks. Via MCP (for example Composio) real tools join in – Gmail, Drive, Sheets and more. Every answer comes from Groq, my voice from the Pi.";
+    return "I can show weather, run timers, a stopwatch and pomodoro, calculate, search the web, read Wikipedia and the news, track crypto, query GitHub, generate images, translate, and keep notes and tasks. Via MCP (for example Composio) I also fetch and read your emails aloud – ask \"Show my latest emails\", then \"Read the first one\". Every answer comes from Groq, my voice from the Pi.";
   }
   if (/\b(hello|hey|good morning|good afternoon|good evening)\b/.test(t) || t === "hi") return "Good day, Sir. How may I help?";
   if (/thank/.test(t)) return "You are most welcome, Sir.";

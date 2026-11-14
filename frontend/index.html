@@ -172,9 +172,11 @@
         </select>
       </label>
       <div class="field"><b>AI provider:</b><div id="llmList" class="muted">Checking …</div></div>
-      <p class="muted small"><b>Groq only.</b> Every AI answer comes from Groq (free tier, key in the Vercel
-      environment or your own above). There is no local model and no offline fallback – if Groq is
-      unreachable, JARVIS will tell you instead of guessing.</p>
+      <p class="muted small"><b>Groq first, Pi as fallback.</b> Every AI answer comes from Groq (free tier,
+      key in the Vercel environment or your own above). If Groq is unreachable, a tiny model on your
+      Raspberry Pi (Ollama, see <code>AIBOX.md</code>) takes over automatically – including MCP tools –
+      and the answer is labelled "via Pi fallback (Ollama)". If both are down, JARVIS will tell you
+      honestly instead of guessing.</p>
       <div class="field"><b>MCP servers (Model Context Protocol):</b><div id="mcpList" class="muted">Checking …</div></div>
       <p class="muted small">Connect real remote MCP servers (for example <b>Composio</b> with Gmail, Drive
       and Sheets) in the MCP plugin – Groq then uses their tools automatically.
@@ -183,7 +185,7 @@
   </div>
 </div>
 
-<footer class="foot">J.A.R.V.I.S v3.1 · Vercel edition · Groq only · British Pi voice (Alan) · Reads your emails via MCP · Minimal design for Safari and iPad</footer>
+<footer class="foot">J.A.R.V.I.S v3.2 · Vercel edition · Groq + Pi fallback brain · British Pi voice (Alan) · Reads your emails via MCP · Minimal design for Safari and iPad</footer>
 
 <script src="/static/js/app.js"></script>
 <script src="/static/js/mcp.js"></script>

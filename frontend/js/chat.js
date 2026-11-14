@@ -97,21 +97,36 @@ async function getMcpTools() {
 }
 
 function groqPayload(msgs, tools) {
-  const payload = { model: "llama-3.3-70b-versatile", messages: msgs, max_tokens: 700, temperature: 0.7 };
+  // Groq retired llama-3.3-70b-versatile (Aug 2026) – gpt-oss-120b is the
+  // current free, tool-capable model. /api/chat applies the same default.
+  const payload = { model: "openai/gpt-oss-120b", messages: msgs, max_tokens: 700, temperature: 0.7 };
   if (tools && tools.length) { payload.tools = tools; payload.tool_choice = "auto"; }
   return payload;
+}
+
+// Upstream errors are objects ({error:{message}}) – never print "[object Object]".
+function readableErr(j, fallback) {
+  const e = j && j.error;
+  if (typeof e === "string") return e;
+  if (e && e.message) return String(e.message);
+  if (j && j.message) return String(j.message);
+  return fallback || "";
 }
 
 async function groqViaServer(msgs, tools) {
   const r = await fetch("/api/chat", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages: msgs, provider: "groq", tools }),
+    body: JSON.stringify({ messages: msgs, tools }),
   });
   if (!r.ok) {
     let detail = "";
-    try { detail = (await r.json()).error || ""; } catch { /* ignore */ }
+    try { detail = readableErr(await r.json(), ""); } catch { /* ignore */ }
     throw new Error("Vercel proxy HTTP " + r.status + (detail ? ": " + detail : ""));
   }
+  // /api/chat tells us which brain answered (Groq or the Pi fallback).
+  const route = r.headers && r.headers.get ? r.headers.get("x-ai-route") : null;
+  if (route === "pi") lastGroqRoute = "Pi fallback (Ollama)";
+  else if (route === "groq") lastGroqRoute = "Groq (Vercel)";
   return (await r.json()).choices[0].message;
 }
 
@@ -121,16 +136,21 @@ async function groqDirect(msgs, tools) {
     headers: { Authorization: "Bearer " + state.groqKey, "Content-Type": "application/json" },
     body: JSON.stringify(groqPayload(msgs, tools)),
   });
-  if (!r.ok) throw new Error("Groq HTTP " + r.status);
+  if (!r.ok) {
+    let detail = "";
+    try { detail = readableErr(await r.json(), ""); } catch { /* ignore */ }
+    throw new Error("Groq HTTP " + r.status + (detail ? ": " + detail : ""));
+  }
   return (await r.json()).choices[0].message;
 }
 
 let lastGroqRoute = "Groq";
 async function groqOnce(msgs, tools) {
   const errors = [];
-  // 1) Server key in the Vercel env (preferred – nothing to type anywhere)
+  // 1) Server route: Groq via Vercel env, with the Pi fallback behind it
+  //    (groqViaServer refines lastGroqRoute from the x-ai-route header)
   if (state.functions) {
-    try { const m = await groqViaServer(msgs, tools); lastGroqRoute = "Groq (Vercel)"; return m; }
+    try { lastGroqRoute = "Groq (Vercel)"; return await groqViaServer(msgs, tools); }
     catch (e) { errors.push(String(e.message || e)); }
   }
   // 2) Your own key in this browser (fallback)
@@ -523,10 +543,11 @@ async function initSettings() {
 
   $("#btnSettings").onclick = async () => {
     $("#settingsModal").hidden = false;
-    // AI status: Groq only
+    // AI status: Groq primary, Pi fallback behind it
     const rows = [
-      { ok: state.groqServerOk, name: "Groq (server key in Vercel)", note: state.groqServerOk ? "Active – every answer comes from Groq, nothing local." : "No server key found." },
+      { ok: state.groqServerOk, name: "Groq (server key in Vercel)", note: state.groqServerOk ? "Active – primary brain for every answer." : "No server key found." },
       { ok: Boolean(state.groqKey), name: "Groq (your key in this browser)", note: state.groqKey ? "Stored as a fallback if the server route fails." : "Optional – get a free key at console.groq.com." },
+      { ok: Boolean(state.piAi), name: "Pi AI fallback (Ollama on the Pi)", note: state.piAi ? "Configured in Vercel – takes over automatically (incl. MCP tools) when Groq is down. Slower, but yours." : "Not configured – see AIBOX.md to give JARVIS a tiny home brain." },
     ];
     $("#llmList").innerHTML = rows.map((p) =>
       `<div>${p.ok ? "online" : "not set"} – ${escapeHtml(p.name)}<br><small class="muted">${escapeHtml(p.note)}</small></div>`).join("");

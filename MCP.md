@@ -68,11 +68,13 @@ or headers are as sensitive as passwords — do not share them.
 
 ## Which AI uses the tools?
 
-**Groq only** (Llama 3.3 70B via function calling). The server key
+**Groq** (`openai/gpt-oss-120b` via function calling). The server key
 from the Vercel env takes priority; your own browser key (Settings)
-is the fallback. Without a working Groq key, MCP tools cannot be
-orchestrated — JARVIS will tell you honestly rather than fake an
-answer.
+is the next fallback. If Groq is down entirely, the **Pi AI fallback**
+(tiny Ollama model, see `AIBOX.md`) drives the same tool loop —
+slower and best with few tools (the Composio Connect router is ideal).
+Without any reachable AI, MCP tools cannot be orchestrated — JARVIS
+will tell you honestly rather than fake an answer.
 
 ## Troubleshooting
 

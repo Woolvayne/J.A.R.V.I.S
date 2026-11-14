@@ -44,6 +44,7 @@ const state = {
   // AI: Groq only. Your own browser key is a fallback; the server key wins.
   groqKey: localStorage.getItem("jarvis_groq_key") || "",
   groqServerOk: false,
+  piAi: false,                // Pi AI fallback (Ollama aibox) configured in Vercel?
   // Pi "Voicebox" (Piper TTS on the Pi, public via Cloudflare tunnel):
   // JARVIS fetches WAV audio from there. Beats the browser voice.
   ttsUrl: (localStorage.getItem("jarvis_tts_url") || "").replace(/\/$/, ""),
@@ -314,6 +315,7 @@ async function fetchHealth() {
     state.functions = true;
     state.llmEnv = d.llm_env || {};
     state.groqServerOk = Boolean(d.llm_env && d.llm_env.groq);
+    state.piAi = Boolean(d.pi_ai);
     state.ttsServer = Boolean(d.voicebox);
     ensureComposioConnect(d);
   } catch { /* static browser-only mode */ }

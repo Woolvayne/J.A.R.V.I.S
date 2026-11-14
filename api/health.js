@@ -3,8 +3,11 @@ export default function handler(req, res) {
   res.status(200).json({
     ok: true,
     runtime: "vercel",
-    version: "3.0.0-vercel",
+    version: "3.2.0-vercel",
     pi_mode: false,
+    // Pi AI fallback (Ollama aibox) configured? URL/token stay server-side;
+    // /api/chat routes there automatically when Groq fails.
+    pi_ai: Boolean(process.env.PI_AI_URL),
     llm_env: {
       groq: Boolean(process.env.GROQ_API_KEY),
       gemini: Boolean(process.env.GEMINI_API_KEY),

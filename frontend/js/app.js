@@ -40,6 +40,11 @@ const state = {
   ttsUrl: (localStorage.getItem("jarvis_tts_url") || "").replace(/\/$/, ""),
   ttsToken: localStorage.getItem("jarvis_tts_token") || "",
   ttsVoice: localStorage.getItem("jarvis_tts_voice") || "de_DE-thorsten-medium",
+  // Voicebox zentral in Vercel eingetragen? (VOICEBOX_URL/TOKEN in der Env,
+  // /api/health meldet nur voicebox:true) – dann läuft TTS über /api/tts,
+  // ohne dass auf diesem Gerät URL/Token getippt werden müssen. Eine lokal
+  // in den Einstellungen gesetzte Voicebox (ttsUrl) hat weiter Vorrang.
+  ttsServer: false,
   // Anzeige
   pi: localStorage.getItem("jarvis_pi") === "1",  // Sparmodus manuell (für Pi-Browser)
   systemMs: 7000,
@@ -323,6 +328,7 @@ async function fetchHealth() {
     const d = await r.json();
     state.functions = true;
     state.llmEnv = d.llm_env || {};
+    state.ttsServer = Boolean(d.voicebox);
     ensureComposioConnect(d);
   } catch { /* reiner Browser-Modus (statisch) */ }
 }

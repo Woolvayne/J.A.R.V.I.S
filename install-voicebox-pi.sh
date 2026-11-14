@@ -7,13 +7,16 @@
 set -e
 
 INSTALL_DIR=/opt/voicebox
+# Absoluter Repo-Pfad merken – das Skript wechselt später nach /tmp, relative
+# cp-Pfade (voicebox/…, deploy/…) würden dann ins Leere zeigen.
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 VOICE=de_DE-thorsten-medium
 VOICE_BASE=https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/medium
 
 echo "== J.A.R.V.I.S Voicebox (Piper) Installation =="
 ARCH=$(uname -m)
 case "$ARCH" in
-  armv7l)  PIPER_TGZ=piper_linux_armv7.tar.gz ;;
+  armv7l)  PIPER_TGZ=piper_linux_armv7l.tar.gz ;;
   aarch64) PIPER_TGZ=piper_linux_aarch64.tar.gz ;;
   x86_64)  PIPER_TGZ=piper_linux_x86_64.tar.gz ;;
   *) echo "Unbekannte Architektur: $ARCH – bitte Piper manuell installieren."; exit 1 ;;
@@ -25,7 +28,7 @@ cd /tmp
 
 if [ ! -x "$INSTALL_DIR/piper/piper" ]; then
   echo "-- Lade Piper herunter …"
-  curl -fsSL -o piper.tar.gz "https://github.com/rhasspy/piper/releases/download/v1.2.0/$PIPER_TGZ"
+  curl -fsSL -o piper.tar.gz "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/$PIPER_TGZ"
   sudo tar -xzf piper.tar.gz -C "$INSTALL_DIR"
 fi
 
@@ -37,7 +40,7 @@ if [ ! -f "$INSTALL_DIR/voices/$VOICE.onnx" ]; then
 fi
 
 echo "-- Installiere Voicebox-Server …"
-sudo cp voicebox/voicebox.py "$INSTALL_DIR/voicebox.py"
+sudo cp "$SCRIPT_DIR/voicebox/voicebox.py" "$INSTALL_DIR/voicebox.py"
 
 if [ ! -f "$INSTALL_DIR/voicebox.env" ]; then
   TOKEN=$(head -c 18 /dev/urandom | od -An -tx1 | tr -d ' \n')
@@ -55,7 +58,7 @@ else
   echo ">> Bestehende voicebox.env gefunden (Token darin unverändert)."
 fi
 
-sudo cp deploy/voicebox.service /etc/systemd/system/voicebox.service
+sudo cp "$SCRIPT_DIR/deploy/voicebox.service" /etc/systemd/system/voicebox.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now voicebox
 

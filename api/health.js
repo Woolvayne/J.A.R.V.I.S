@@ -17,5 +17,9 @@ export default function handler(req, res) {
     // trägt /api/mcp ihn bei connect.composio.dev serverseitig ein und das
     // Dashboard legt den MCP-Server automatisch (ohne Key im Browser) an.
     composio_connect: Boolean(process.env.COMPOSIO_CONSUMER_KEY),
+    // Nur "ist gesetzt?" + der (ungeheime) Stimmenname – URL/Token der
+    // Pi-Voicebox bleiben serverseitig; der Browser spricht dann /api/tts.
+    voicebox: Boolean(process.env.VOICEBOX_URL),
+    voicebox_voice: process.env.VOICEBOX_VOICE || "de_DE-thorsten-medium",
   });
 }

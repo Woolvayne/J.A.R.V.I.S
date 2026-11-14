@@ -80,15 +80,32 @@ curl https://voice.deine-domain.de/health   # muss {"ok": true, ...} zeigen
 
 ## 3) In JARVIS eintragen
 
-⚙ Einstellungen (auf jedem Gerät einmal, bleibt im Browser):
+**Empfohlen: zentral in Vercel (einmal für alle Geräte).** In Vercel
+(Project → Settings → Environment Variables) setzen:
+
+- `VOICEBOX_URL` = `https://voice.deine-domain.de` (bzw. die
+  `….trycloudflare.com`-URL – die ändert sich bei jedem Tunnel-Neustart,
+  dann hier aktualisieren)
+- `VOICEBOX_TOKEN` = das Token aus der `voicebox.env` (Typ: encrypted)
+- `VOICEBOX_VOICE` = `de_DE-thorsten-medium`
+
+Danach neu deployen (geschieht automatisch beim Merge auf `main`).
+JARVIS erkennt die zentrale Voicebox über `/api/health` und spricht über
+den Proxy `/api/tts` – **auf dem iPad muss nichts eingetippt werden**,
+der Token verlässt den Server nie.
+
+**Alternative: pro Gerät.** ⚙ Einstellungen (bleibt nur in diesem Browser):
 
 - **Pi-Voicebox-URL:** `https://voice.deine-domain.de`
 - **Pi-Voicebox-Token:** das Token aus der `voicebox.env`
 - **Pi-Voicebox-Stimme:** `de_DE-thorsten-medium`
-- „Antworten vorlesen“ an → **„🔊 Stimme testen“**
 
-Reihenfolge der Ausgabe: **Voicebox (Pi)** → Edge TTS (optionales Pi-Backend)
-→ Browser-Stimme (Fallback, z. B. wenn der Pi aus ist).
+Eine lokal eingetragene Voicebox hat Vorrang vor der zentralen.
+In beiden Fällen: „Antworten vorlesen“ an → **„🔊 Stimme testen“**.
+
+Reihenfolge der Ausgabe: **Voicebox (Pi, lokal oder via Vercel)** →
+Edge TTS (optionales Pi-Backend) → Browser-Stimme (Fallback, z. B. wenn
+der Pi aus ist).
 
 ## Sicherheit
 

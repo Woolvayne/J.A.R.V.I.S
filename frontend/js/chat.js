@@ -286,6 +286,9 @@ async function initSettings() {
   $("#setTtsUrl").value = state.ttsUrl;
   $("#setTtsToken").value = state.ttsToken;
   $("#setTtsVoice").value = state.ttsVoice;
+  if (state.ttsServer && !state.ttsUrl) {
+    ttsLog("Voicebox ist zentral in Vercel eingetragen – nichts mehr einzutippen, „🔊 Stimme testen“ genügt.");
+  }
   $("#setPiMode").checked = state.pi;
   $("#btnTtsTest").onclick = () => testVoice();
 

@@ -142,7 +142,7 @@
       <label class="field"><input type="checkbox" id="setAutoSpeak" checked> Begrüßung beim Start sprechen</label>
       <div class="field"><button type="button" class="btn" id="btnTtsTest">🔊 Stimme testen</button>
         <div id="ttsStatus" class="muted small" style="margin-top:6px">Noch kein Test. Tipp: Auf iPad braucht Safari eine erste Berührung, bevor Ton erlaubt ist.</div></div>
-      <label class="field">Pi-Voicebox-URL (Piper-TTS auf dem Pi, öffentlich via Cloudflare Tunnel – leer = Browser-Stimme)
+      <label class="field">Pi-Voicebox-URL (Piper-TTS auf dem Pi, öffentlich via Cloudflare Tunnel – leer = zentral in Vercel eingetragene Voicebox, sonst Browser-Stimme)
         <input type="text" id="setTtsUrl" placeholder="https://voice.deine-domain.de">
       </label>
       <label class="field">Pi-Voicebox-Token (X-Voice-Token, steht auf dem Pi in der voicebox.env)

@@ -53,6 +53,17 @@ async function speak(text) {
       if (!r.ok) throw new Error("voicebox HTTP " + r.status);
       await playAudioBlob(await r.blob());
       ttsLog("Voicebox (Pi) hat gesprochen.");
+    } else if (state.ttsServer) {
+      // 1b. Wahl: Voicebox zentral in Vercel eingetragen – Token bleibt
+      // serverseitig, der Browser ruft nur /api/tts (kein Eintippen nötig)
+      const r = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: clean, voice: state.ttsVoice || undefined }),
+      });
+      if (!r.ok) throw new Error("voicebox (Vercel) HTTP " + r.status);
+      await playAudioBlob(await r.blob());
+      ttsLog("Voicebox (Pi, via Vercel) hat gesprochen.");
     } else if (state.backendUrl) {
       // 2. Wahl: optionales Pi-Backend mit Edge TTS (bessere Stimme)
       const r = await fetch(state.backendUrl + "/api/tts", {
@@ -205,7 +216,7 @@ function speakBrowser(text) {
 // dadurch sieht man sofort, ob die Ausgabe grundsätzlich geht.
 function testVoice() {
   unlockSpeech();
-  const engine = state.ttsUrl ? "Pi-Voicebox" : state.backendUrl ? "Edge TTS (Pi)" : "Browser-Stimme";
+  const engine = state.ttsUrl ? "Pi-Voicebox" : state.ttsServer ? "Pi-Voicebox (via Vercel)" : state.backendUrl ? "Edge TTS (Pi)" : "Browser-Stimme";
   ttsLog("Test gestartet (" + engine + ", " + browserVoices().length + " Browser-Stimmen).");
   speak("J.A.R.V.I.S Sprachausgabe-Test. Wenn du mich hörst, funktioniert die Stimme, Sir.");
 }

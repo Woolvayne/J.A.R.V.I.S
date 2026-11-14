@@ -34,6 +34,18 @@ function ttsLog(msg) {
   if (el) el.innerHTML = ttsEvents.map((e) => escapeHtml(e)).join("<br>");
 }
 
+// Fehlertext eines TTS-Servers lesbar machen (z. B. "Voicebox HTTP 401:
+// Token fehlt/falsch") – sonst sähe man nur ein nichtssagendes "HTTP 502".
+async function ttsHttpError(r, label) {
+  let detail = "";
+  try {
+    const t = await r.text();
+    try { const j = JSON.parse(t); detail = [j.error, j.detail].filter(Boolean).join(" – "); }
+    catch { detail = t.slice(0, 120); }
+  } catch { /* egal */ }
+  return new Error(label + " HTTP " + r.status + (detail ? ": " + detail : ""));
+}
+
 /* ------------------------------------------------------- TTS (Ausgabe) */
 async function speak(text) {
   if (!state.ttsOn || !text) return;
@@ -42,6 +54,7 @@ async function speak(text) {
   // Tippen/Klicken nachholen statt tonlos zu verpuffen.
   if (!speechUnlocked) { deferredSpeech = clean; ttsLog("Warte auf erste Berührung (iOS-Sperre) …"); return; }
   setOrb("speak", "J.A.R.V.I.S spricht …");
+  let audioBlocked = false;
   try {
     if (state.ttsUrl) {
       // 1. Wahl: Pi-Voicebox (Piper) – URL z. B. per Cloudflare Tunnel öffentlich
@@ -50,7 +63,7 @@ async function speak(text) {
         headers: { "Content-Type": "application/json", ...(state.ttsToken ? { "X-Voice-Token": state.ttsToken } : {}) },
         body: JSON.stringify({ text: clean, voice: state.ttsVoice || undefined }),
       });
-      if (!r.ok) throw new Error("voicebox HTTP " + r.status);
+      if (!r.ok) throw await ttsHttpError(r, "voicebox");
       await playAudioBlob(await r.blob());
       ttsLog("Voicebox (Pi) hat gesprochen.");
     } else if (state.ttsServer) {
@@ -61,7 +74,7 @@ async function speak(text) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: clean, voice: state.ttsVoice || undefined }),
       });
-      if (!r.ok) throw new Error("voicebox (Vercel) HTTP " + r.status);
+      if (!r.ok) throw await ttsHttpError(r, "voicebox (Vercel)");
       await playAudioBlob(await r.blob());
       ttsLog("Voicebox (Pi, via Vercel) hat gesprochen.");
     } else if (state.backendUrl) {
@@ -78,10 +91,11 @@ async function speak(text) {
       await speakBrowser(clean);
     }
   } catch (e) {
+    if (e && e.message === "audio-blocked") { audioBlocked = true; return; } // Audio kommt beim nächsten Tippen – keine Zweitstimme
     ttsLog("Server-Stimme fehlgeschlagen (" + String(e.message || e) + ") – nutze Browser-Stimme.");
     await speakBrowser(clean).catch(() => {});
   } finally {
-    setOrb("idle", "Bereit, Sir.");
+    setOrb("idle", audioBlocked ? "Einmal tippen – dann lese ich die Antwort vor." : "Bereit, Sir.");
   }
 }
 
@@ -90,16 +104,40 @@ function getAudioEl() {
   return audioEl;
 }
 
-async function playAudioBlob(blob) {
+let pendingAudioBlob = null; // Audio, das iOS erst beim nächsten Tippen erlaubt
+
+async function playAudioBlob(blob, isRetry) {
   const el = getAudioEl();
   const url = URL.createObjectURL(blob);
   el.src = url;
   el.volume = 1;
+  ttsLog("Audio erhalten (" + Math.round(blob.size / 1024) + " KB) – spiele ab …");
+  try { el.load(); } catch { /* egal */ }
+  const ended = new Promise((res) => { el.onended = res; el.onerror = res; });
   try {
     await el.play(); // auf iOS ok, weil das Element beim 1. Tippen "geprimed" wurde
-    await new Promise((res) => { el.onended = res; el.onerror = res; });
+    ttsLog("Wiedergabe läuft" + (isRetry ? " (nach Tippen)" : "") + " …");
+    await ended;
+    ttsLog("Wiedergabe fertig.");
+  } catch (e) {
+    // iOS verweigert play() ohne frische Nutzer-Geste (kommt vor, wenn der
+    // Pi ein paar Sekunden zum Generieren brauchte). Nicht aufgeben und
+    // NICHT zusätzlich die Browser-Stimme starten (sonst Doppel-Ausgabe),
+    // sondern dasselbe Audio beim nächsten Tippen sofort abspielen.
+    pendingAudioBlob = blob;
+    ttsLog("iOS blockiert den Ton noch (" + String((e && e.name) || e) + ") – bitte einmal kurz tippen, dann spreche ich.");
+    setOrb("idle", "Einmal tippen – dann lese ich die Antwort vor.");
+    throw new Error("audio-blocked");
   } finally { URL.revokeObjectURL(url); }
 }
+
+// Nächstes Tippen spielt ein von iOS blockiertes Audio nach (innerhalb der Geste).
+document.addEventListener("pointerdown", () => {
+  if (!pendingAudioBlob) return;
+  const blob = pendingAudioBlob;
+  pendingAudioBlob = null;
+  playAudioBlob(blob, true).catch(() => {});
+}, { capture: true });
 
 function stopSpeaking() {
   speechRunId++;
@@ -118,7 +156,9 @@ function unlockSpeech() {
     // (Voicebox/Edge) später auch ohne direkten Klick abspielen dürfen.
     const el = getAudioEl();
     el.src = SILENT_WAV;
-    el.play().then(() => { el.pause(); el.currentTime = 0; }).catch(() => {});
+    // Nur pausieren, wenn noch das Stille-WAV geladen ist – läuft inzwischen
+    // schon echtes Voicebox-Audio, darf das Prime-Promise es nicht stoppen.
+    el.play().then(() => { if (el.src === SILENT_WAV) { el.pause(); el.currentTime = 0; } }).catch(() => {});
   } catch { /* egal */ }
   try {
     if (window.speechSynthesis) {
@@ -213,11 +253,27 @@ function speakBrowser(text) {
 }
 
 // Test-Knopf in den Einstellungen: spricht direkt im Klick (Nutzer-Geste),
-// dadurch sieht man sofort, ob die Ausgabe grundsätzlich geht.
-function testVoice() {
+// dadurch sieht man sofort, ob die Ausgabe grundsätzlich geht. Vorher ein
+// kurzer Verbindungs-Selbsttest, damit im Status steht, WO es hakt:
+// Pi-Tunnel nicht erreichbar? Token abgelehnt? Oder erst iOS-Wiedergabe?
+async function testVoice() {
   unlockSpeech();
   const engine = state.ttsUrl ? "Pi-Voicebox" : state.ttsServer ? "Pi-Voicebox (via Vercel)" : state.backendUrl ? "Edge TTS (Pi)" : "Browser-Stimme";
   ttsLog("Test gestartet (" + engine + ", " + browserVoices().length + " Browser-Stimmen).");
+  try {
+    if (state.ttsServer && !state.ttsUrl) {
+      const r = await fetch("/api/tts");
+      const d = await r.json();
+      if (!d.configured) ttsLog("Selbsttest: Voicebox ist in Vercel NICHT eingetragen.");
+      else if (!d.upstream_reachable) ttsLog("Selbsttest: Pi über Cloudflare-Tunnel NICHT erreichbar – läuft der Tunnel auf dem Pi noch?");
+      else if (!d.token_accepted) ttsLog("Selbsttest: Pi erreichbar, aber TOKEN ABGELEHNT (HTTP " + (d.upstream_tts_status || 401) + ") – auf dem Pi: sudo systemctl restart voicebox (lädt das Token neu), danach hier erneut testen.");
+      else ttsLog("Selbsttest OK: Pi erreichbar, Token akzeptiert, " + (d.audio_bytes || "?") + " Byte Audio erzeugt. Jetzt kommt der Hörtest …");
+    } else if (state.ttsUrl) {
+      const r = await fetch(state.ttsUrl + "/health");
+      const d = await r.json();
+      ttsLog(r.ok ? "Selbsttest: Voicebox erreichbar, Stimmen: " + ((d.voices || []).join(", ") || "?") : "Selbsttest: Voicebox meldet HTTP " + r.status);
+    }
+  } catch (e) { ttsLog("Selbsttest fehlgeschlagen: " + String(e.message || e)); }
   speak("J.A.R.V.I.S Sprachausgabe-Test. Wenn du mich hörst, funktioniert die Stimme, Sir.");
 }
 

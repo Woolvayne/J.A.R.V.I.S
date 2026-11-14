@@ -50,12 +50,13 @@ in JARVIS Settings.
 ### Existing install: switch to Alan (one block)
 
 ```bash
-cd /opt/voicebox/voices && \
+cd /tmp && \
 curl -fsSL -O https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx && \
 curl -fsSL -O https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx.json && \
+ls -la en_GB-alan-medium.onnx* && \
 python3 - <<'EOF'
 import json, shutil
-p = "/opt/voicebox/voices/en_GB-alan-medium.onnx.json"
+p = "/tmp/en_GB-alan-medium.onnx.json"
 shutil.copyfile(p, p + ".orig")
 d = json.load(open(p))
 bad = [k for k in set(list(d.get("phoneme_id_map", {})) + list(d.get("phoneme_map", {}))) if len(k) > 1]
@@ -67,11 +68,15 @@ d.pop("vowel_clusters", None)
 json.dump(d, open(p, "w"), ensure_ascii=False)
 print("patched, removed:", bad)
 EOF
+sudo mv /tmp/en_GB-alan-medium.onnx /tmp/en_GB-alan-medium.onnx.json /opt/voicebox/voices/ && \
 sudo sed -i "s/^VOICEBOX_VOICE=.*/VOICEBOX_VOICE=en_GB-alan-medium/" /opt/voicebox/voicebox.env && \
 sudo systemctl restart voicebox && sleep 2 && \
 curl -s http://127.0.0.1:8770/health && echo && \
 curl -s -X POST http://127.0.0.1:8770/tts -H "X-Voice-Token: $(sudo grep ^VOICEBOX_TOKEN= /opt/voicebox/voicebox.env | cut -d= -f2)" -H "Content-Type: application/json" -d '{"text":"Good evening. All systems are fully operational."}' -o /tmp/alan-test.wav -w "HTTP %{http_code} – %{size_download} bytes\n"
 ```
+
+Success looks like: the `.onnx` file is ~63 MB in the `ls`, `/health`
+lists both voices, and the last line reads `HTTP 200` with tens of KB.
 
 Then set `VOICEBOX_VOICE=en_GB-alan-medium` in Vercel as well
 (Project → Settings → Environment Variables) and redeploy – or simply

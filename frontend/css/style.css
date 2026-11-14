@@ -167,7 +167,7 @@ body.pi *, body.pi *::before, body.pi *::after {
 }
 .msg {
   max-width: 85%; padding: 10px 14px; border-radius: 16px; font-size: 15px; line-height: 1.45;
-  word-wrap: break-word; animation: msgIn .25s ease both;
+  word-wrap: break-word; white-space: pre-line; animation: msgIn .25s ease both;
 }
 @keyframes msgIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 .msg .who { display: block; font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }

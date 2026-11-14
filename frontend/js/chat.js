@@ -283,7 +283,11 @@ async function initSettings() {
   $("#setOllamaUrl").value = state.ollamaUrl;
   $("#setOllamaModel").value = state.ollamaModel;
   $("#setBackendUrl").value = state.backendUrl;
+  $("#setTtsUrl").value = state.ttsUrl;
+  $("#setTtsToken").value = state.ttsToken;
+  $("#setTtsVoice").value = state.ttsVoice;
   $("#setPiMode").checked = state.pi;
+  $("#btnTtsTest").onclick = () => testVoice();
 
   sel.onchange = () => { state.voice = sel.value; localStorage.setItem("jarvis_voice", sel.value); speak("Stimme geändert, Sir."); };
   $("#setTtsOn").onchange = (e) => { state.ttsOn = e.target.checked; localStorage.setItem("jarvis_tts", e.target.checked ? "1" : "0"); };
@@ -294,6 +298,9 @@ async function initSettings() {
   $("#setOllamaUrl").onchange = (e) => { state.ollamaUrl = e.target.value.trim().replace(/\/$/, "") || "http://localhost:11434"; localStorage.setItem("jarvis_ollama_url", state.ollamaUrl); state.ollamaOk = null; };
   $("#setOllamaModel").onchange = (e) => { state.ollamaModel = e.target.value.trim() || "qwen2.5:0.5b"; localStorage.setItem("jarvis_ollama_model", state.ollamaModel); };
   $("#setBackendUrl").onchange = (e) => { state.backendUrl = e.target.value.trim().replace(/\/$/, ""); localStorage.setItem("jarvis_backend_url", state.backendUrl); fillVoiceOptions(); pollSystem(); };
+  $("#setTtsUrl").onchange = (e) => { state.ttsUrl = e.target.value.trim().replace(/\/$/, ""); localStorage.setItem("jarvis_tts_url", state.ttsUrl); ttsLog(state.ttsUrl ? "Voicebox-URL gesetzt: " + state.ttsUrl : "Voicebox aus – Browser-Stimme aktiv."); };
+  $("#setTtsToken").onchange = (e) => { state.ttsToken = e.target.value.trim(); localStorage.setItem("jarvis_tts_token", state.ttsToken); };
+  $("#setTtsVoice").onchange = (e) => { state.ttsVoice = e.target.value.trim() || "de_DE-thorsten-medium"; localStorage.setItem("jarvis_tts_voice", state.ttsVoice); };
   $("#setPiMode").onchange = (e) => { state.pi = e.target.checked; localStorage.setItem("jarvis_pi", e.target.checked ? "1" : "0"); document.body.classList.toggle("pi", state.pi); };
 
   $("#btnSettings").onclick = async () => {

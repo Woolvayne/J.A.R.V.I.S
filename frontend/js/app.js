@@ -35,6 +35,11 @@ const state = {
   ollamaOkAt: 0,
   // Optionales Pi-Backend (Edge TTS + echte Pi-Werte), z. B. http://raspberrypi.local:8000
   backendUrl: (localStorage.getItem("jarvis_backend_url") || "").replace(/\/$/, ""),
+  // Pi-"Voicebox" (Piper-TTS auf dem Pi, öffentlich per Cloudflare-Tunnel-URL,
+  // NICHT nur LAN): JARVIS holt dort WAV-Audio. Hat Vorrang vor Browser-Stimme.
+  ttsUrl: (localStorage.getItem("jarvis_tts_url") || "").replace(/\/$/, ""),
+  ttsToken: localStorage.getItem("jarvis_tts_token") || "",
+  ttsVoice: localStorage.getItem("jarvis_tts_voice") || "de_DE-thorsten-medium",
   // Anzeige
   pi: localStorage.getItem("jarvis_pi") === "1",  // Sparmodus manuell (für Pi-Browser)
   systemMs: 7000,
